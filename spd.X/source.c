@@ -365,15 +365,9 @@ void initialize_system(void) {
     TMR1IE = 1 ;
     TMR2IF = 0 ;
     TMR2IE = 1 ;
-    TMR4IF = 0 ;
-    TMR4IE = 1 ;
     T1CON = 0b00010001;
     TMR1H   = 69 ;
     TMR1L   = 253 ;
-    T2CON = 0b01001110; //タイマ2利用　POS1:10　PRS1:16
-    PR2 = 247;
-    T4CON = 0b00100101; //タイマ4利用　POS1:5　PRS1:4
-    PR4 = 83;
 
 char lcd[8]; //LCD表示用文字列
    
