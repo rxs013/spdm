@@ -36,7 +36,7 @@ void __interrupt() isr(void);
 void rotate();
 void initialize_system(void);
 void shutdown(void);
-uint16_t spd_to_step(uint8_t rpm);
+uint16_t spd_to_step(uint8_t spd);
 void initialize_motor();
 
 #define _XTAL_FREQ 8000000 //PICのクロックをHzで設定(8MHz)
