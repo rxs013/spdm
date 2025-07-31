@@ -86,6 +86,7 @@ int16_t g_motor_target_step = 0;
  * calculate and it will affect the response.
 -------------------------------------------------------------------*/
 uint16_t spd_to_step(uint8_t spd) {
+    //現物合わせ未調整
     uint16_t target_step;
     if(spd==0){
         target_step = 0;
@@ -168,8 +169,7 @@ void __interrupt() isr(void) {
         {
             pos += 1;
         }
-        spdpl = 0;
-       
+        spdpl = 0;       
         TMR1H   = 69 ;
         TMR1L   = 253 ;
         TMR1IF = 0;
