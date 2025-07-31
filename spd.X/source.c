@@ -75,7 +75,7 @@ int16_t g_motor_target_step = 0;
  * <<setting>>
  * uint16_t spd_to_step(uint8_t spd)
  * Make adjustments here to suit the specifications of the various
- * tachometers.
+ * spdmeters.
  * <<note>>
  * By customizing this function, you can create an unevenly spaced gauge
  * that takes advantage of the characteristics of a stepper motor.
@@ -94,7 +94,7 @@ uint16_t spd_to_step(uint8_t spd) {
         target_step = (spd*3)>>1;
         // same as 'target_step = spd*1.5;
     } else if(spd<20) {         // 1000-1900rpm
-        target_step = 15+((rpm-10)*3);
+        target_step = 15+((spd-10)*3);
     } else if(spd<60) {         // 2000-5900rpm
         target_step = 45+(((spd-20)>>1)*9);
         // same as 'target_step = 45+((rpm-20)/10*4.5);'
@@ -136,7 +136,7 @@ void main() //メイン関数はLCDの表示でお茶を濁す
 -------------------------------------------------------------------*/
 void __interrupt() isr(void) {
 {   static unsigned char spdpl; //パルスカウント用
-    static unsigned int plbuf[4];
+    static unsigned char plbuf[4];
     
      InterI2C() ;    
     
@@ -161,8 +161,8 @@ void __interrupt() isr(void) {
         plbuf[pos] = spdpl; 
         if(pos >= 3)
         {
-            spdval = (unsigned int) (plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 2 + 0.5; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
-            g_motor_target_step = spd_to_step(g_rpm);
+            spdval = (unsigned char) ((plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 2 + 0.5); //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
+            g_motor_target_step = spd_to_step(spdval);
             pos = 0;
         }
         else
@@ -326,7 +326,7 @@ void initialize_motor() {
      * Just a demonstration, feel free to do as you like with it.
      */
     for(ii=0;;ii+=10) {
-        g_motor_target_step = rpm_to_step(ii);
+        g_motor_target_step = spd_to_step(ii);
         if(g_motor_target_step<MAX_SPD_STEPS) {
             while (g_motor_pos_step != g_motor_target_step);
             __delay_ms(200);
