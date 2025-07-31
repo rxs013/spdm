@@ -32,38 +32,112 @@
 #include "skI2CLCDlib.h"
 #include <stdlib.h>
 
-
+void __interrupt() isr(void);
+void rotate();
+void initialize_system(void);
+void shutdown(void);
+uint16_t spd_to_step(uint8_t rpm);
+void initialize_motor();
 
 #define _XTAL_FREQ 8000000 //PICのクロックをHzで設定(8MHz)
 #define bat_sig RB3 //バッ直引き込み信号
-#define survo_sig RA1 //サーボモータPWM信号
 #define OD1 0x00
 #define OD2 0x01
 #define OD3 0x02
 #define PL1 0x03
 #define PL2 0x04
+// motor macro
+#define MTHLLH()    {LATA=0;LATA=0b01000010;} //pin1/4
+#define MTHLLL()    {LATA=0;LATA=0b01000000;} //pin1
+#define MTLLHL()    {LATA=0;LATA=0b00000001;} //pin3
+#define MTLHHL()    {LATA=0;LATA=0b10000001;} //pin2/3
+#define MTLHLL()    {LATA=0;LATA=0b10000000;} //pin2
+#define MTLLLH()    {LATA=0;LATA=0b00000010;} //pin4
+
+#define ACC_MODE_LO         (13)
+#define ACC_MODE_HI         (5)     // <<setting>>If the needle is heavy,
+                                    // you may need to increase this number.
+                                    // Default is 4.
+
+#define MAX_SPD_STEPS     (555)   // Maximum value on the spdmeter scale. 
+                                    // 555 means that the shaft rotates 185 degrees.
+
 unsigned int pulse; //総走行距離内部カウント変数, 0.05秒間の平均速度変数
 unsigned char spdval;
 unsigned long odo; //総走行距離表示値変数
+int16_t g_motor_pos_step = 0;
+int16_t g_motor_target_step = 0;
 
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
 
-void sd(void);
+/* ------------------------------------------------------------------
+ * <<setting>>
+ * uint16_t spd_to_step(uint8_t spd)
+ * Make adjustments here to suit the specifications of the various
+ * tachometers.
+ * <<note>>
+ * By customizing this function, you can create an unevenly spaced gauge
+ * that takes advantage of the characteristics of a stepper motor.
+ * For example, you could set it to 30 degrees per 1000 revolutions
+ * above 6000 revolutions, and 15 degrees below that.
+ * The X27 stepper motor has 3 steps per degree.
+ * However, please do not use division, as it takes a lot of time to
+ * calculate and it will affect the response.
+-------------------------------------------------------------------*/
+uint16_t spd_to_step(uint8_t spd) {
+    uint16_t target_step;
+    if(spd==0){
+        target_step = 0;
+    } else if(spd<10){          // 0-10km/h
+        target_step = (spd*3)>>1;
+        // same as 'target_step = spd*1.5;
+    } else if(spd<20) {         // 1000-1900rpm
+        target_step = 15+((rpm-10)*3);
+    } else if(spd<60) {         // 2000-5900rpm
+        target_step = 45+(((spd-20)>>1)*9);
+        // same as 'target_step = 45+((rpm-20)/10*4.5);'
+    } else{                     // 6000rpm over
+        target_step = 225+((spd-60)*9);
+    }
+    
+    if(target_step > MAX_SPD_STEPS){
+        target_step = MAX_SPD_STEPS;
+    }
+    return target_step;
+}
 
 /*******************************************************************************
-*  InterFunction()   割り込みの処理                                            *
+*  メインの処理                                                                *
 *******************************************************************************/
-unsigned int interrupt InterFunction()
-{   static unsigned char spdpl, width, widbuf, svbuf, pos; //PWMのON時間用変数
+void main() //メイン関数はLCDの表示でお茶を濁す
+{         
+    initialize_system();
+    initialize_motor();
+    LCD_Clear();    
+    while(1) 
+    {
+      bat_sig = 1;
+      sprintf(lcd, "%05lu%3u", odo, spdval) ;
+      LCD_SetCursor(0,0);
+      LCD_Puts("ODO  SPD"); 
+      LCD_SetCursor (0,1);
+      LCD_Puts(lcd);
+      if(RB7==1)
+      {
+        shutdown()
+      }
+    }     
+}
+
+/* ------------------------------------------------------------------
+ * PIC Interrupt
+-------------------------------------------------------------------*/
+void __interrupt() isr(void) {
+{   static unsigned char spdpl; //パルスカウント用
     static unsigned int plbuf[4];
     
-     InterI2C() ;
-       
-    
-   
-    
-    
+     InterI2C() ;    
     
     if(C1IF){ //車輪速センサパルス検知
         spdpl += 1;
@@ -80,12 +154,14 @@ unsigned int interrupt InterFunction()
     C1IF    = 0 ;   
    }
 
-    if(TMR1IF){ //21Hz
+    if(TMR1IF)
+    { //21Hz
 
         plbuf[pos] = spdpl; 
         if(pos >= 3)
         {
-            svbuf = (unsigned int) ((plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) / 4. + 0.5);
+            spdval = (unsigned int) (plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 2 + 0.5; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
+            g_motor_target_step = spd_to_step(g_rpm);
             pos = 0;
         }
         else
@@ -93,76 +169,194 @@ unsigned int interrupt InterFunction()
             pos += 1;
         }
         spdpl = 0;
-        if(spdval != svbuf){
-        spdval = svbuf; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
-               if(spdval >= 84) //メータの仕様上針がπradで84km/h
-                {
-                width = 49; //サーボモータはπrad以上動かないのでリミットを設ける
-                }
-                else if(spdval <= 10)
-                {
-                   width = 239 - (unsigned int)(spdval * 1.7 + 0.5);
-                }
-                else if (spdval == 0)
-                {
-                   width = 239 ;
-                }
-                else
-                {
-                   width = 239 - (unsigned int)(spdval * 2.26 + 0.5); //0-83の数値を49-239に変換
-                }
-        } 
-            TMR1H   = 69 ;
-            TMR1L   = 253 ;
-            TMR1IF = 0;
-            }
-        
-    if(TMR2IF){ //サーボ制御サイクル開始　50Hz
-         if(RB7 == 0){
-         if(widbuf != width){
-         if(widbuf < width)
-         {
-             widbuf ++ ;
-         }
-         else if(widbuf > width)
-         {
-             widbuf --;
-         }
-            PR4 = widbuf; //49?239が0.5ms?2.4msと化す
-            survo_sig = 1; //PWM信号H
-            TMR4ON = 1; //サーボ信号(PWM)ON時間計測開始
-         }
-            TMR2IF = 0;
-        }
-        }
-     
-    if(TMR4IF){ //PWM信号ONになって時が満ちたら
-        survo_sig = 0; //PWM信号L
-        TMR4ON = 0; //次のサイクルまで待機
-        TMR4 = 0;
-        TMR4IF = 0;
+       
+        TMR1H   = 69 ;
+        TMR1L   = 253 ;
+        TMR1IF = 0;
     }
-    
+        
+    // MOTOR ROTATION TIMING
+    if (TMR2IF) {
+        rotate();
+        TMR2IF = 0;
+    } // end of TMR2IF 
 }
 
-/*******************************************************************************
-*  メインの処理                                                                *
-*******************************************************************************/
-void main() //メイン関数はLCDの表示でお茶を濁す
-{
+/* ------------------------------------------------------------------
+Rotate stepping motor
+-------------------------------------------------------------------*/
+void rotate() {
+    static int8_t l_motor_phase = 0;
+    static uint8_t l_acceleration_mode = ACC_MODE_LO;
+    uint8_t ii;
+
+    int8_t new_dir = RO_STOP, sum_dir = 0;
+    static  int8_t dir_buffer[MT_BUFFER_COUNT] = {RO_STOP};
+    uint8_t unmatch_flag;
+
+    /*
+     * acceleration mode list
+     * Set a timer2 here to control the motor at the most accurate time possible.
+     */
+    switch (l_acceleration_mode) {
+        case  0: {T2CON = 0b00100101;PR2=222;} break; // 556us
+        case  1: {T2CON = 0b00100101;PR2=228;} break; // 570us
+        case  2: {T2CON = 0b00100101;PR2=240;} break; // 600us
+        case  3: {T2CON = 0b00100101;PR2=252;} break; // 630us
+        case  4: {T2CON = 0b00101101;PR2=225;} break; // 676us
+        case  5: {T2CON = 0b00101101;PR2=247;} break; // 740us
+        case  6: {T2CON = 0b00110101;PR2=239;} break; // 838us
+        case  7: {T2CON = 0b01000101;PR2=231;} break; // 1040us
+        case  8: {T2CON = 0b01010101;PR2=235;} break; // 1292us
+        case  9: {T2CON = 0b01100101;PR2=251;} break; // 1630us
+        case 10: {T2CON = 0b01111101;PR2=251;} break; // 2008us
+        case 11: {T2CON = 0b00100110;PR2=250;} break; // 2500us
+        case 12: {T2CON = 0b00110110;PR2=226;} break; // 3168us
+        default: {T2CON = 0b00111110;PR2=250;} break; // 4000us
+    }
+    
+    if (g_motor_pos_step > g_motor_target_step) {
+        new_dir = RO_TURN_L;
+        g_motor_pos_step--;
+    } else if (g_motor_pos_step < g_motor_target_step) {
+        new_dir = RO_TURN_R;
+        g_motor_pos_step++;
+    } else {
+        new_dir = RO_STOP;
+    }
+    
+    /*
+     *  Set motor phase.
+     * X27 has 6 different phases. By changing the phase in sequence with
+     * the digital output signal, X27 rotates.
+     * For details, please check the X27 specifications.
+     */
+    if (RO_TURN_L == dir_buffer[0]) {
+        if (5 == l_motor_phase) {   // 5 is max of l_motor_phase
+            l_motor_phase = 0;
+        } else {
+            l_motor_phase++;
+        }
+    } else if (RO_TURN_R == dir_buffer[0]) {
+        if (0 == l_motor_phase) {
+            l_motor_phase = 5;
+        } else {
+            l_motor_phase--;
+        }
+    } else {
+        // RO_STOP does nothing.
+    }
+
+    // Rotate motor.
+    switch (l_motor_phase) {
+        case 0: MTHLLH(); break;
+        case 1: MTHLLL(); break;
+        case 2: MTLLHL(); break;
+        case 3: MTLHHL(); break;
+        case 4: MTLHLL(); break;
+        case 5: MTLLLH(); break;
+        default: break;
+    }
+    
+
+    /*
+     * Set up a buffer for look-ahead.
+     * If it is found that the direction of the motor will change,
+     * unmatch_flag turn on, and reduce the speed of the needle in advance.
+     */
+    unmatch_flag = 0;
+    for (ii = 0; ii < (MT_BUFFER_COUNT_END); ii++) {
+        dir_buffer[ii] = dir_buffer[ii + 1];
+        
+        if (new_dir != dir_buffer[ii]) {
+            unmatch_flag = 1;
+        }
+    }
+    dir_buffer[ii] = new_dir;
+
+    /*
+     * Next acceleration mode
+     * If the new rotation direction is different from the rotation in the buffer,
+     * the rotation speed will be slowed down.
+     * If they are all the same, the rotation speed will be accelerated.
+     */
+    if (unmatch_flag) {
+        // Lower limit of needle speed.
+        if (l_acceleration_mode < ACC_MODE_LO) {
+            l_acceleration_mode++;
+        }
+    } else {
+        // Upper limit of needle speed.
+        if (l_acceleration_mode > ACC_MODE_HI) {
+            l_acceleration_mode--;
+        }
+    }
+}
+
+/* ------------------------------------------------------------------
+ * void initialize_motor()
+ * Initialize the motor. A startup demo will also be run here.
+-------------------------------------------------------------------*/
+void initialize_motor() {
+    uint8_t ii;
+    // Start ISR with timer
+    rotate();
+
+    /*
+     * First, turn the left fully to fix the position.
+     * We never know the state of the shaft when the power is turned on.
+     * By turning it beyond its limit, the shaft alignment is complete.
+     */
+    g_motor_target_step = 0;
+    g_motor_pos_step = MAX_X27_COUNT_STEP;
+    // Kick first rotation
+    while (0!=g_motor_pos_step);
+    __delay_ms(200);
+    
+    /*
+     * Second, turn the left fully to fix the position 0.
+     */
+    g_motor_target_step = 0;
+    g_motor_pos_step = MAX_SPD_STEPS;
+    // Kick first rotation
+    while (g_motor_pos_step>0);
+    __delay_ms(200);
+    
+    /*
+     * Just a demonstration, feel free to do as you like with it.
+     */
+    for(ii=0;;ii+=10) {
+        g_motor_target_step = rpm_to_step(ii);
+        if(g_motor_target_step<MAX_SPD_STEPS) {
+            while (g_motor_pos_step != g_motor_target_step);
+            __delay_ms(200);
+            continue;
+        }
+        break;
+    }
+    g_motor_target_step = MAX_SPD_STEPS;
+    while (g_motor_pos_step != g_motor_target_step);
+    __delay_ms(100);
+}
+
+/** -----------------------------------------------------------------
+ * void initialize_system(void)
+ * Initialize PIC microchip system
+------------------------------------------------------------------ */
+void initialize_system(void) {
     OSCCON     = 0b00000000 ; // 内部クロックは８ＭＨｚとする
     OPTION_REG = 0b00000000 ;
     ANSELA     = 0b00000100 ; // C12IN-のみアナログとする
     ANSELB     = 0b00000000 ; // AN5-AN11は使用しない全てデジタルI/Oとする
-    TRISA      = 0b00000100 ; // ピン(RA)は全て出力に割当てる(RA5は入力のみとなる)
-    TRISB      = 0b10010010 ; // ピン(RB)はRB4(SCL1)/RB1(SDA1)/RB7(キースイッチ信号)が入力
-    WPUB       = 0b10000000 ; // RB7は内部プルアップ抵抗を指定する
+    TRISA      = 0b00000100 ; // ピン(RA)はRA2(速度信号)が入力(RA5は入力のみとなる)
+    TRISB      = 0b00010011 ; // ピン(RB)はRB4(SCL1)/RB1(SDA1)/RB0(キースイッチ信号)が入力
+    WPUB       = 0b00000001 ; // RB0は内部プルアップ抵抗を指定する
     PORTA      = 0b00000000 ; // RA出力ピンの初期化(全てLOWにする)
     PORTB      = 0b00000000 ; // RB出力ピンの初期化(全てLOWにする)
     INTCON = 0b11010000; //割り込み設定
 
     DACCON0 = 0b11000000 ;   // VDD/VSSを使用、DACOUTピン(RA2)使わない
-    DACCON1 = 6;           // 約0.9Vを出力( 5V*(6/2^5)=0.9375 )
+    DACCON1 = 8;           // 1.25Vを出力( 5V*(8/2^5)=1.25 )
     CM1CON0 = 0b11010100 ;   // ?＞＋でON、高速モード、出力は反転、ヒステリシス無効
     CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、?はRA3から入力
     C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
@@ -181,9 +375,6 @@ void main() //メイン関数はLCDの表示でお茶を濁す
     T4CON = 0b00100101; //タイマ4利用　POS1:5　PRS1:4
     PR4 = 83;
 
-    
-    
-    
 char lcd[8]; //LCD表示用文字列
    
 odo = EEPROM_READ(OD3); //前回記憶した総走行距離1の読み込み
@@ -211,18 +402,14 @@ if(odo>99999){
         LCD_SetCursor(1,1) ;        // 表示位置を設定する
      LCD_Puts("EVOLVED") ;
     __delay_ms(1500); 
-     LCD_Clear();    
-     
-    while(RB7 == 0) 
-      {
-      bat_sig = 1;
-      sprintf(lcd, "%05lu%3u", odo, spdval) ;
-      LCD_SetCursor(0,0);
-      LCD_Puts("ODO  SPD"); 
-      LCD_SetCursor (0,1);
-      LCD_Puts(lcd);
-      }
-     
+}
+
+/** -----------------------------------------------------------------
+ * void shutdown(void)
+ * memory distances and reset motor pos
+------------------------------------------------------------------ */
+void shutdown()
+{    
      C1IE = 0;
      TMR1IE= 0 ;
      TMR2IE = 0;
@@ -258,9 +445,6 @@ if(odo>99999){
     EEPROM_WRITE(PL2, pl2); //内部カウント値2
     }
     GIE = 0;
-     __delay_ms(1000); 
-     bat_sig = 0; //シャットダウン
-
+    __delay_ms(1000); 
+    bat_sig = 0; //シャットダウン
 }
-
-
