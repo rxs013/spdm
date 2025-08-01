@@ -58,7 +58,7 @@ void initialize_motor();
 #define MTLLLH()    {LATA=0;LATA=0b00000010;} //pin4
 
 #define ACC_MODE_LO         (13)
-#define ACC_MODE_HI         (5)     // <<setting>>If the needle is heavy,
+#define ACC_MODE_HI         (4)     // <<setting>>If the needle is heavy,
                                     // you may need to increase this number.
                                     // Default is 4.
 
@@ -88,7 +88,8 @@ int16_t g_motor_target_step = 0;
  * However, please do not use division, as it takes a lot of time to
  * calculate and it will affect the response.
 -------------------------------------------------------------------*/
-uint16_t spd_to_step(uint8_t spd) {
+uint16_t spd_to_step(uint8_t spd) 
+{
     //現物合わせ未調整
     uint16_t target_step;
     if(spd==0){
@@ -112,9 +113,10 @@ uint16_t spd_to_step(uint8_t spd) {
 }
 
 /*******************************************************************************
-*  メインの処理                                                                *
+*  メインの処理
+*　メイン関数は基本LCDの表示でお茶を濁す
 *******************************************************************************/
-void main() //メイン関数はLCDの表示でお茶を濁す
+void main() 
 {         
     initialize_system();
     initialize_motor();
@@ -198,7 +200,8 @@ void __interrupt() isr(void)
 /* ------------------------------------------------------------------
 Rotate stepping motor
 -------------------------------------------------------------------*/
-void rotate() {
+void rotate() 
+{
     static int8_t l_motor_phase = 0;
     static uint8_t l_acceleration_mode = ACC_MODE_LO;
     uint8_t ii;
@@ -310,7 +313,10 @@ void rotate() {
  * void initialize_motor()
  * Initialize the motor. A startup demo will also be run here.
 -------------------------------------------------------------------*/
-void initialize_motor() {
+void initialize_motor() 
+{    
+    TMR2IF = 0 ;
+    TMR2IE = 1 ;
     uint8_t ii;
     // Start ISR with timer
     rotate();
@@ -369,14 +375,12 @@ void initialize_system(void) {
     INTCON = 0b11010000; //割り込み設定
 
     DACCON0 = 0b11000000 ;   // VDD/VSSを使用、DACOUTピン(RA2)使わない
-    DACCON1 = 8;           // 1.25Vを出力( 5V*(8/2^5)=1.25 )
-    CM1CON0 = 0b11010100 ;   // ?＞＋でON、高速モード、出力は反転、ヒステリシス無効
-    CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、?はRA3から入力
+    DACCON1 = 7;           // 約1.2Vを出力( 5V*(7/2^5)=1.19xxx )
+    CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
+    CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
     C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
     C1IE    = 1 ;            // コンパレータ1割込みを許可する
     TMR1IF = 0 ;   
-    TMR2IF = 0 ;
-    TMR2IE = 1 ;
     T1CON = 0b00010001;
     TMR1H   = 69 ;
     TMR1L   = 253 ;
