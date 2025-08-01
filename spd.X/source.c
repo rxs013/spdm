@@ -4,8 +4,8 @@
 // 'C' source line config statements
 
 // コンフィギュレーション１の設定
-#pragma config FOSC = ECH    // 内部ｸﾛｯｸを使用する(INTOSC)
-//#pragma config FOSC = INTOSC    // 内部ｸﾛｯｸを使用する(INTOSC)
+//#pragma config FOSC = ECH    // 内部ｸﾛｯｸを使用する(INTOSC)
+#pragma config FOSC = INTOSC    // 内部ｸﾛｯｸを使用する(INTOSC)
 #pragma config WDTE = OFF       // ｳｵｯﾁﾄﾞｯｸﾞﾀｲﾏｰ無し(OFF)
 #pragma config PWRTE = ON     // 電源ONから64ms後にﾌﾟﾛｸﾞﾗﾑを開始する(ON)
 #pragma config MCLRE = OFF      // 外部ﾘｾｯﾄ信号は使用せずにﾃﾞｼﾞﾀﾙ入力(RA5)ﾋﾟﾝとする(OFF)
@@ -40,6 +40,9 @@ uint16_t spd_to_step(uint8_t spd);
 void initialize_motor();
 
 #define _XTAL_FREQ 8000000 //PICのクロックをHzで設定(8MHz)
+#define RO_TURN_R (1)
+#define RO_TURN_L (-1)
+#define RO_STOP   (0)
 #define bat_sig RB3 //バッ直引き込み信号
 #define OD1 0x00
 #define OD2 0x01
@@ -62,8 +65,8 @@ void initialize_motor();
 #define MAX_SPD_STEPS     (555)   // Maximum value on the spdmeter scale. 
                                     // 555 means that the shaft rotates 185 degrees.
 
-unsigned int pulse; //総走行距離内部カウント変数, 0.05秒間の平均速度変数
-unsigned char spdval;
+unsigned int pulse; //総走行距離内部カウント変数
+unsigned char spdval; //速度値
 unsigned long odo; //総走行距離表示値変数
 int16_t g_motor_pos_step = 0;
 int16_t g_motor_target_step = 0;
@@ -116,44 +119,54 @@ void main() //メイン関数はLCDの表示でお茶を濁す
     initialize_system();
     initialize_motor();
     LCD_Clear();    
+    TMR1IE=1;
+    bat_sig = 1;
+    char lcd[8]; //LCD表示用文字列
     while(1) 
-    {
-      bat_sig = 1;
-      sprintf(lcd, "%05lu%3u", odo, spdval) ;
-      LCD_SetCursor(0,0);
-      LCD_Puts("ODO  SPD"); 
-      LCD_SetCursor (0,1);
-      LCD_Puts(lcd);
-      if(RB7==1)
-      {
-        shutdown()
-      }
+    {      
+        sprintf(lcd, "%05lu%3u", odo, spdval) ;
+        LCD_SetCursor(0,0);
+        LCD_Puts("ODO  SPD"); 
+        LCD_SetCursor (0,1);
+        LCD_Puts(lcd);
+        if(RB7==1)
+        {
+            shutdown();
+            break;
+        }
     }     
 }
 
 /* ------------------------------------------------------------------
  * PIC Interrupt
 -------------------------------------------------------------------*/
-void __interrupt() isr(void) {
-{   static unsigned char spdpl; //パルスカウント用
+void __interrupt() isr(void)
+{   static unsigned char spdpl; //パルスカウント用, 0.05秒間の平均速度変数
     static unsigned char plbuf[4];
     
      InterI2C() ;    
     
-    if(C1IF){ //車輪速センサパルス検知
-        spdpl += 1;
-        if(C1OUT){ //+信号だったら
-        pulse += 1; //総走行距離内部カウント値+1
-                if(pulse >= 37800){ //60km/hで1400rpmのシャフトに27丁の歯車。あとはお察し
-                odo += 1; //走行距離+1km
-                if(odo > 99999){
-                odo = 0;    //こんなに使わないとは思うが一応リセット
-                                }
+    if(C1IF)    //車輪速センサパルス検知
+    { 
+        if(TMR1IE) //オープニング中は速度表示用変数にはノータッチ
+        {
+            spdpl++;
+        }
+        if(C1OUT) //+信号だったら
+        { 
+            pulse++; //総走行距離内部カウント値+1
+            if(pulse >= 37800) //60km/hで1400rpmのシャフトに27丁の歯車。あとはお察し
+            {
+                odo++; //走行距離+1km
+                if(odo > 99999)
+                {
+                    odo = 0;    //こんなに使わないとは思うが一応リセット
+                }
                 pulse = 0; //内部カウントリセット
-                                   }
-                       }
-    C1IF    = 0 ;   
-   }
+            }
+        }
+        C1IF    = 0 ;   
+    }
 
     if(TMR1IF)
     { //21Hz
@@ -167,7 +180,7 @@ void __interrupt() isr(void) {
         }
         else
         {
-            pos += 1;
+            pos++;
         }
         spdpl = 0;       
         TMR1H   = 69 ;
@@ -199,20 +212,20 @@ void rotate() {
      * Set a timer2 here to control the motor at the most accurate time possible.
      */
     switch (l_acceleration_mode) {
-        case  0: {T2CON = 0b00100101;PR2=222;} break; // 556us
-        case  1: {T2CON = 0b00100101;PR2=228;} break; // 570us
-        case  2: {T2CON = 0b00100101;PR2=240;} break; // 600us
-        case  3: {T2CON = 0b00100101;PR2=252;} break; // 630us
-        case  4: {T2CON = 0b00101101;PR2=225;} break; // 676us
-        case  5: {T2CON = 0b00101101;PR2=247;} break; // 740us
-        case  6: {T2CON = 0b00110101;PR2=239;} break; // 838us
-        case  7: {T2CON = 0b01000101;PR2=231;} break; // 1040us
-        case  8: {T2CON = 0b01010101;PR2=235;} break; // 1292us
-        case  9: {T2CON = 0b01100101;PR2=251;} break; // 1630us
-        case 10: {T2CON = 0b01111101;PR2=251;} break; // 2008us
-        case 11: {T2CON = 0b00100110;PR2=250;} break; // 2500us
-        case 12: {T2CON = 0b00110110;PR2=226;} break; // 3168us
-        default: {T2CON = 0b00111110;PR2=250;} break; // 4000us
+        case  0: {T2CON = 0b00100100;PR2=222;} break; // 556us
+        case  1: {T2CON = 0b00100100;PR2=228;} break; // 570us
+        case  2: {T2CON = 0b00100100;PR2=240;} break; // 600us
+        case  3: {T2CON = 0b00100100;PR2=252;} break; // 630us
+        case  4: {T2CON = 0b00101100;PR2=225;} break; // 676us
+        case  5: {T2CON = 0b00101100;PR2=247;} break; // 740us
+        case  6: {T2CON = 0b00110100;PR2=239;} break; // 838us
+        case  7: {T2CON = 0b01000100;PR2=231;} break; // 1040us
+        case  8: {T2CON = 0b01010100;PR2=235;} break; // 1292us
+        case  9: {T2CON = 0b01100100;PR2=251;} break; // 1630us
+        case 10: {T2CON = 0b01111100;PR2=251;} break; // 2008us
+        case 11: {T2CON = 0b00100101;PR2=250;} break; // 2500us
+        case 12: {T2CON = 0b00110101;PR2=226;} break; // 3168us
+        default: {T2CON = 0b00111101;PR2=250;} break; // 4000us
     }
     
     if (g_motor_pos_step > g_motor_target_step) {
@@ -344,7 +357,7 @@ void initialize_motor() {
  * Initialize PIC microchip system
 ------------------------------------------------------------------ */
 void initialize_system(void) {
-    OSCCON     = 0b00000000 ; // 内部クロックは８ＭＨｚとする
+    OSCCON     = 0b01110000 ; // 内部クロックは８ＭＨｚとする
     OPTION_REG = 0b00000000 ;
     ANSELA     = 0b00000100 ; // C12IN-のみアナログとする
     ANSELB     = 0b00000000 ; // AN5-AN11は使用しない全てデジタルI/Oとする
@@ -361,41 +374,37 @@ void initialize_system(void) {
     CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、?はRA3から入力
     C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
     C1IE    = 1 ;            // コンパレータ1割込みを許可する
-    TMR1IF = 0 ;
-    TMR1IE = 1 ;
+    TMR1IF = 0 ;   
     TMR2IF = 0 ;
     TMR2IE = 1 ;
     T1CON = 0b00010001;
     TMR1H   = 69 ;
     TMR1L   = 253 ;
-
-char lcd[8]; //LCD表示用文字列
-   
-odo = EEPROM_READ(OD3); //前回記憶した総走行距離1の読み込み
-odo <<= 8;
-odo = odo | EEPROM_READ(OD2); //前回記憶した総走行距離2の読み込み
-odo <<= 8;
-odo = odo | EEPROM_READ(OD1); //前回記憶した総走行距離3の読み込み
-pulse = EEPROM_READ(PL2); //前回記憶した内部カウント数1の読み込み
-pulse <<= 8;
-pulse = pulse | EEPROM_READ(PL1); //前回記憶した内部カウント数2の読み込み
+  
+    odo = EEPROM_READ(OD3); //前回記憶した総走行距離1の読み込み
+    odo <<= 8;
+    odo = odo | EEPROM_READ(OD2); //前回記憶した総走行距離2の読み込み
+    odo <<= 8;
+    odo = odo | EEPROM_READ(OD1); //前回記憶した総走行距離3の読み込み
+    pulse = EEPROM_READ(PL2); //前回記憶した内部カウント数1の読み込み
+    pulse <<= 8;
+    pulse = pulse | EEPROM_READ(PL1); //前回記憶した内部カウント数2の読み込み
  
-if(odo>99999){
-    odo = 0;    
+    if(odo>99999){
+        odo = 0;    
     }
     if(pulse>37800){
-    pulse = 0;    
+        pulse = 0;    
     }
     // Ｉ２Ｃの初期化処理(通信速度400KHz※書類上)
-     InitI2C_Master(1) ;
-     // ＬＣＤモジュールの初期化処理
-     // ICON OFF,コントラスト(0-63),VDD=5Vで使う,LCDは8文字列
-     LCD_Init(LCD_NOT_ICON,63,LCD_VDD5V,8) ;
-        LCD_SetCursor(0,0) ;        // 表示位置を設定する
-     LCD_Puts("STREAM") ;
-        LCD_SetCursor(1,1) ;        // 表示位置を設定する
-     LCD_Puts("EVOLVED") ;
-    __delay_ms(1500); 
+    InitI2C_Master(1) ;
+    // ＬＣＤモジュールの初期化処理
+    // ICON OFF,コントラスト(0-63),VDD=5Vで使う,LCDは8文字列
+    LCD_Init(LCD_NOT_ICON,63,LCD_VDD5V,8) ;
+    LCD_SetCursor(0,0) ;        // 表示位置を設定する
+    LCD_Puts("STREAM") ;
+    LCD_SetCursor(1,1) ;        // 表示位置を設定する
+    LCD_Puts("EVOLVED") ;    
 }
 
 /** -----------------------------------------------------------------
@@ -405,14 +414,13 @@ if(odo>99999){
 void shutdown()
 {    
      C1IE = 0;
-     TMR1IE= 0 ;
-     TMR2IE = 0;
-     TMR4IE = 0;
+     TMR1IE= 0;
      LCD_Clear();
      LCD_SetCursor(0,0) ;        // 表示位置を設定する
      LCD_Puts("MOVABLE") ;
      LCD_SetCursor(3,1) ;        // 表示位置を設定する
      LCD_Puts("STUFF") ;
+    g_motor_target_step = 0;    //針を0km/hへ
     unsigned char od1, od2, od3, pl1, pl2; //EEPROM記録用の贄
     unsigned int sw; //贄の贄
     od1 = odo & 0xFF; //マスクして8bit化
@@ -437,8 +445,7 @@ void shutdown()
     }
     if(EEPROM_READ(PL2) != pl2){//下位8bitが記憶されている値と同じでなければ
     EEPROM_WRITE(PL2, pl2); //内部カウント値2
-    }
-    GIE = 0;
+    }    
     __delay_ms(1000); 
     bat_sig = 0; //シャットダウン
 }
