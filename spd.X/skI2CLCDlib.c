@@ -99,7 +99,7 @@ void LCD_SetCursor(int col, int row)
 {
      int row_offsets[] = { 0x00, 0x40 } ;
 
-     command(0x80 | (col + row_offsets[row])) ; // Set DDRAM Adddress : 00H-27H,40H-67H
+     command(0x80 | (unsigned char)(col + row_offsets[row])) ; // Set DDRAM Adddress : 00H-27H,40H-67H
 }
 /*******************************************************************************
 *  LCD_Putc(c)                                                                 *
@@ -156,7 +156,7 @@ void LCD_CreateChar(int p,char *dt)
      if (x == 0) {
           //  LCDにキャラ保存先のアドレスを指示する
           I2C_Send(0b10000000) ;             // control byte の送信(コマンドを指定)
-          I2C_Send(0x40 | (p << 3)) ;
+          I2C_Send(0x40 | (char)(p << 3)) ;
           Wait27us() ;
           //  LCDにキャラデータを送信する
           I2C_Send(0b01000000) ;             // control byte の送信(データを指定)
@@ -192,7 +192,7 @@ void LCD_IconClear(void)
      }
      I2C_Stop() ;                            // ストップコンディションを発行する
      // 拡張コマンドを設定を無効にする
-     command(FuncSet_DT) ;
+     command((unsigned char)FuncSet_DT) ;
 }
 /*******************************************************************************
 *  LCD_IconOnOff(flag,dt)                                                      *
@@ -223,7 +223,7 @@ void LCD_IconOnOff(int flag, unsigned int dt)
      I2C_Stop() ;                            // ストップコンディションを発行する
      Wait27us() ;
      // 拡張コマンドを設定を無効にする
-     command(FuncSet_DT) ;
+     command((unsigned char)FuncSet_DT) ;
 }
 /*******************************************************************************
 *  ans = LCD_PageSet(no)                                                       *
@@ -315,9 +315,9 @@ void LCD_Contrast(int contrast)
      command(0x70 | (contrast & 0x0F)) ;
      // コントラストの上位２ビット
      ContSet_DT = (ContSet_DT & 0xFC) | ((contrast & 0x30) >> 4) ;
-     command(ContSet_DT) ;
+     command((unsigned char)ContSet_DT) ;
      // 拡張コマンドを設定を無効にする
-     command(FuncSet_DT) ;
+     command ((unsigned char)FuncSet_DT) ;
 }
 /*******************************************************************************
 *  LCD_Init(icon,contrast,bon,colsu)                                           *
@@ -335,19 +335,19 @@ void LCD_Init(int icon, int contrast, int bon, int colsu)
      LCD_ColumnSu = colsu ;                        // LCDの文字数をセット
      Wait10ms(4) ;                                 // 電源ＯＮ後40msまで待ってから初期化
      FuncSet_DT = 0x38 ;
-     command(FuncSet_DT);// function set           : データ線は8本・表示は2行・フォントは5x8ドット
+     command((unsigned char)FuncSet_DT);// function set           : データ線は8本・表示は2行・フォントは5x8ドット
      command(0x39) ;     // function set           : 拡張コマンドの設定を有効にする
      command(0x14) ;     // Internal OSC frequency : バイアスの選択と内部OSC周波数の調整
      d = 0x70 | (contrast & 0x0F) ;                // (下位4ビット)の取り出し
-     command(d) ;        // Contrast set           : コントラスト調整データ
+     command((unsigned char)d) ;        // Contrast set           : コントラスト調整データ
      d = 0x50 | ((contrast & 0x30) >> 4) ;         // (上位2ビット)の取り出し
      if (icon == 1) d = d | 0x08 ;                 // アイコンを利用する場合
      if (bon  == 1) d = d | 0x04 ;                 // 昇圧回路を利用する場合
      ContSet_DT = d ;
-     command(d) ;        // Contrast set           : 昇圧回路、コントラスト調整データ
+     command((unsigned char)d) ;        // Contrast set           : 昇圧回路、コントラスト調整データ
      command(0x6C) ;     // Follower control       : フォロア回路をON、増幅率の調整を行う
      Wait10ms(20) ;                                // 電力が安定するまで待つ(200ms)
-     command(FuncSet_DT);// function set           : 拡張コマンドを設定を無効にする
+     command((unsigned char)FuncSet_DT);// function set           : 拡張コマンドを設定を無効にする
      command(0x0C) ;     // display control        : 画面表示はON・カーソル表示はOFF・カーソル点滅はOFF
      command(0x06) ;     // entry mode set         : 文字を表示した次にカーソルを移動するを指示
      LCD_Clear() ;       // Clear Display          : 画面を消去する、初期状態に戻す

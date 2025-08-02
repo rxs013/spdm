@@ -199,7 +199,7 @@ int I2C_Receive(int ack)
      dt = I2C_SSPBUF ;                // データの受信
      I2C_IdleCheck(0x5) ;
      if (CollisionCheck == 1) return -1 ;
-     I2C_SSPCON2_ACKDT = ack ;        // ACKデータのセット
+     I2C_SSPCON2_ACKDT = (unsigned char)ack ;        // ACKデータのセット
      I2C_SSPCON2_ACKEN = 1 ;          // ACKデータを返す
      return dt ;
 }
@@ -230,7 +230,7 @@ int I2C_SlaveRead(int slv_adrs,char reg_adrs,unsigned char *data,char kosu)
                     for (i=1 ; i<=kosu ; i++) {
                          if (i==kosu) ack = NOACK ;
                          else         ack = ACK ;
-                         *data = I2C_Receive(ack);     // 指定個数分読み出す(受信する)
+                         *data = (unsigned char)I2C_Receive(ack);     // 指定個数分読み出す(受信する)
                          data++ ;
                     }
                }
