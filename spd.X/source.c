@@ -30,8 +30,6 @@
 #include <stdio.h>
 #include "skI2Clib.h"
 #include "skI2CLCDlib.h"
-#include <stdlib.h>
-
 void __interrupt() isr(void);
 void rotate(void);
 void initialize_system(void);
@@ -180,7 +178,7 @@ void __interrupt() isr(void)
         plbuf[pos] = spdpl; 
         if(pos >= 3)
         {
-            spdval = (unsigned char)((plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 2) + 0.5; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
+            spdval = (unsigned char)(((plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 2) + 0.5); //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
             g_motor_target_step = spd_to_step(spdval);
             pos = 0;
         }

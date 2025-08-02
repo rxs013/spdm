@@ -1,0 +1,6 @@
+make -f nbproject/Makefile-defaultActiveCA.mk SUBPROJECTS= .clean-conf
+make[1]: Entering directory 'D:/PIC/spdm/spd.X'
+rm -f  -r .ca/build/defaultActiveCA/production
+rm -f  -r .ca/dist/defaultActiveCA/production
+make[1]: Leaving directory 'D:/PIC/spdm/spd.X'
+[32mCLEAN SUCCESSFUL (total time: 1s)[0m
