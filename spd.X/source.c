@@ -146,7 +146,8 @@ void main()
 void __interrupt() isr(void)
 {   static unsigned char spdpl; //パルスカウント用, 0.05秒間の平均速度変数
     static unsigned char plbuf[4];
-     static unsigned char pos;
+    static unsigned char pos;
+    unsigned int plint;
     
      InterI2C() ;    
     
@@ -177,8 +178,19 @@ void __interrupt() isr(void)
 
         plbuf[pos] = spdpl; 
         if(pos >= 3)
-        {
-            spdval = (unsigned char)(((plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 2) + 0.5); //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
+        {            
+            //ビットシフト四捨五入
+            plint = (plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 1;
+            if(plint & 0x01 == 0x01)
+            {
+                plint >>= 1 + 1;
+            }
+            else
+            {
+                plint >> 1;
+            }
+            
+            spdval = (unsigned char)plint; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
             g_motor_target_step = spd_to_step(spdval);
             pos = 0;
         }
