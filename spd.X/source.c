@@ -181,13 +181,13 @@ void __interrupt() isr(void)
         {            
             //ビットシフト四捨五入
             plint = (plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 1;
-            if(plint & 0x01 == 0x01)
+            if((plint & 0x01) == 0x01)
             {
                 plint >>= 1 + 1;
             }
             else
             {
-                plint >> 1;
+                plint >>= 1;
             }
             
             spdval = (unsigned char)plint; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
