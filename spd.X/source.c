@@ -89,25 +89,39 @@ uint16_t g_motor_target_step = 0;
  * However, please do not use division, as it takes a lot of time to
  * calculate and it will affect the response.
 -------------------------------------------------------------------*/
-uint16_t spd_to_step(uint8_t spd) 
-{
-    //現物合わせ未調整
+uint16_t spd_to_step(uint8_t spd) {
     uint16_t target_step;
-    if(spd==0){
+    //10km/h = 15° = 45step
+    //20km/h = 38°= 114step
+    //30km/h = 63°= 189step
+    //40km/h = 86 = 258step
+    //50km/h = 109°= 327step
+    //60km/h = 133°= 399step
+    if(spd==0)
+    {
         target_step = 0;
-    } else if(spd<10){          // 0-10km/h
-        target_step = (spd*3)>>1;
-        // same as 'target_step = spd*1.5;
-    } else if(spd<20) {         // 1000-1900rpm
-        target_step = 15+((spd-10)*3);
-    } else if(spd<60) {         // 2000-5900rpm
-        target_step = 45+(((spd-20)>>1)*9);
-        // same as 'target_step = 45+((rpm-20)/10*4.5);'
-    } else{                     // 6000rpm over
-        target_step = 225+((spd-60)*9);
+    } else if(spd<11) // 0-10km/h
+    {          
+        //4.5x
+        target_step = (uint16_t)(((spd << 3) + spd)>>1);
+    } else if(spd<21) //11-20km/h
+    {
+        //7.5x-36
+        target_step = (uint16_t)((((spd << 4) - spd) >> 1) - 36);
+    }  else if(spd<51)  // 20-50km/h
+    {                     
+        //6.9x-18
+        //≒7x-16-(x/8)
+        //7x-(x+128)/8
+        target_step = (uint16_t)(((spd << 3) - spd) - ((spd + 128) >> 3));
+    } else  //50km/h over
+    {
+        //7.2x-33
+        target_step = (uint16_t)(((spd << 3) - spd) + (spd >> 2) - 33);
     }
     
-    if(target_step > MAX_SPD_STEPS){
+    if(target_step > MAX_SPD_STEPS)    
+    {
         target_step = MAX_SPD_STEPS;
     }
     return target_step;
