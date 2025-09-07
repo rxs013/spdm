@@ -60,8 +60,8 @@ void initialize_motor(void);
 #define ACC_MODE_HI         (4)     // <<setting>>If the needle is heavy,
                                     // you may need to increase this number.
                                     // Default is 4.
-#define MAX_SPD_STEPS     (555)   // Maximum value on the spdmeter scale. 
-                                    // 555 means that the shaft rotates 185 degrees.
+#define MAX_SPD_STEPS     (540)   // Maximum value on the spdmeter scale. 
+                                    // 540 means that the shaft rotates 180 degrees.
 #define MT_BUFFER_COUNT     (ACC_MODE_LO-ACC_MODE_HI)
 #define MT_BUFFER_COUNT_END (MT_BUFFER_COUNT-1)
 
@@ -136,7 +136,8 @@ void main()
     initialize_system();
     initialize_motor();
     LCD_Clear();    
-    TMR1IE=1;
+    T1CONbits.TMR1ON = 1;
+    TMR1IE = 1;
     bat_sig = 1;
     char lcd[8]; //LCD表示用文字列
     while(1) 
@@ -146,7 +147,7 @@ void main()
         LCD_Puts("ODO  SPD"); 
         LCD_SetCursor (0,1);
         LCD_Puts(lcd);
-        if(RB7==1)
+        if(RB7 == 1)
         {
             shutdown();
             break;
@@ -189,7 +190,6 @@ void __interrupt() isr(void)
 
     if(TMR1IF)
     { //21Hz
-
         plbuf[pos] = spdpl; 
         if(pos >= 3)
         {            
@@ -197,7 +197,8 @@ void __interrupt() isr(void)
             plint = (plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 1;
             if((plint & 0x01) == 0x01)
             {
-                plint >>= 1 + 1;
+                plint >>= 1;
+                plint++;
             }
             else
             {
@@ -234,7 +235,7 @@ void rotate(void)
     static uint8_t l_acceleration_mode = ACC_MODE_LO;
     uint8_t ii;
 
-    int8_t new_dir = RO_STOP, sum_dir = 0;
+    int8_t new_dir = RO_STOP;
     static  int8_t dir_buffer[MT_BUFFER_COUNT] = {RO_STOP};
     uint8_t unmatch_flag;
 
@@ -372,7 +373,8 @@ void initialize_motor(void)
     /*
      * Just a demonstration, feel free to do as you like with it.
      */
-    for(ii=0;;ii+=10) {
+    for(ii=0;;ii+=10) 
+    {
         g_motor_target_step = spd_to_step(ii);
         if(g_motor_target_step<MAX_SPD_STEPS) {
             while (g_motor_pos_step != g_motor_target_step);
@@ -408,8 +410,9 @@ void initialize_system(void) {
     CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
     C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
     C1IE    = 1 ;            // コンパレータ1割込みを許可する
+    T1CON = 0b00010000;
     TMR1IF = 0 ;   
-    T1CON = 0b00010001;
+    TMR1IE = 0 ;
     TMR1H   = 69 ;
     TMR1L   = 253 ;
   
