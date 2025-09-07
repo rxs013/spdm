@@ -43,6 +43,7 @@ void initialize_motor(void);
 #define RO_STOP   (0)
 #define MAX_X27_COUNT_STEP  (945)   // 315degree x 3step = 945
 #define bat_sig RB3 //バッ直引き込み信号
+#define key_sig RB0 //キーON信号
 #define OD1 0x00
 #define OD2 0x01
 #define OD3 0x02
@@ -147,7 +148,7 @@ void main()
         LCD_Puts("ODO  SPD"); 
         LCD_SetCursor (0,1);
         LCD_Puts(lcd);
-        if(RB7 == 1)
+        if(key_sig == 1)
         {
             shutdown();
             break;
