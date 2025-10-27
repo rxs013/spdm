@@ -49,6 +49,7 @@ void initialize_motor(void);
 #define OD3 0x02
 #define PL1 0x03
 #define PL2 0x04
+#define TMR1_pre 17994
 // motor macro
 #define MTHLLH()    {LATA=0;LATA=0b01000010;} //pin1/4
 #define MTHLLL()    {LATA=0;LATA=0b01000000;} //pin1
@@ -148,6 +149,7 @@ void main()
         LCD_Puts("ODO  SPD"); 
         LCD_SetCursor (0,1);
         LCD_Puts(lcd);
+        g_motor_target_step = spd_to_step(spdval);
         if(key_sig == 1)
         {
             shutdown();
@@ -166,9 +168,10 @@ void __interrupt() isr(void)
     unsigned int plint;
     
      InterI2C() ;    
-    
+     
     if(C1IF)    //車輪速センサパルス検知
     { 
+        C1IF    = 0 ;   
         if(TMR1IE) //オープニング中は速度表示用変数にはノータッチ
         {
             spdpl++;
@@ -186,11 +189,13 @@ void __interrupt() isr(void)
                 pulse = 0; //内部カウントリセット
             }
         }
-        C1IF    = 0 ;   
+
     }
 
     if(TMR1IF)
     { //21Hz
+        TMR1IF = 0;
+        TMR1 = TMR1_pre;
         plbuf[pos] = spdpl; 
         if(pos >= 3)
         {            
@@ -204,10 +209,8 @@ void __interrupt() isr(void)
             else
             {
                 plint >>= 1;
-            }
-            
+            }            
             spdval = (unsigned char)plint; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
-            g_motor_target_step = spd_to_step(spdval);
             pos = 0;
         }
         else
@@ -215,15 +218,13 @@ void __interrupt() isr(void)
             pos++;
         }
         spdpl = 0;       
-        TMR1H   = 69 ;
-        TMR1L   = 253 ;
-        TMR1IF = 0;
     }
-        
-    // MOTOR ROTATION TIMING
-    if (TMR2IF) {
-        rotate();
+
+     // MOTOR ROTATION TIMING
+    if (TMR2IF) 
+    {
         TMR2IF = 0;
+        rotate();
     } // end of TMR2IF 
 }
 
@@ -404,19 +405,8 @@ void initialize_system(void) {
     PORTA      = 0b00000000 ; // RA出力ピンの初期化(全てLOWにする)
     PORTB      = 0b00000000 ; // RB出力ピンの初期化(全てLOWにする)
     INTCON = 0b11010000; //割り込み設定
-
     DACCON0 = 0b11000000 ;   // VDD/VSSを使用、DACOUTピン(RA2)使わない
     DACCON1 = 7;           // 約1.2Vを出力( 5V*(7/2^5)=1.19xxx )
-    CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
-    CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
-    C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
-    C1IE    = 1 ;            // コンパレータ1割込みを許可する
-    T1CON = 0b00010000;
-    TMR1IF = 0 ;   
-    TMR1IE = 0 ;
-    TMR1H   = 69 ;
-    TMR1L   = 253 ;
-  
     odo = EEPROM_READ(OD3); //前回記憶した総走行距離1の読み込み
     odo <<= 8;
     odo = odo | EEPROM_READ(OD2); //前回記憶した総走行距離2の読み込み
@@ -424,14 +414,23 @@ void initialize_system(void) {
     odo = odo | EEPROM_READ(OD1); //前回記憶した総走行距離3の読み込み
     pulse = EEPROM_READ(PL2); //前回記憶した内部カウント数1の読み込み
     pulse <<= 8;
-    pulse = pulse | EEPROM_READ(PL1); //前回記憶した内部カウント数2の読み込み
- 
+    pulse = pulse | EEPROM_READ(PL1); //前回記憶した内部カウント数2の読み込み 
     if(odo>99999){
         odo = 0;    
     }
     if(pulse>37800){
         pulse = 0;    
-    }
+    }   
+
+    CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
+    CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
+    C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
+    C1IE    = 1 ;            // コンパレータ1割込みを許可する
+    T1CON = 0b00010000;
+    TMR1IF = 0 ;   
+    TMR1IE = 0 ;
+    TMR1 = TMR1_pre;
+
     // Ｉ２Ｃの初期化処理(通信速度400KHz※書類上)
     InitI2C_Master(1) ;
     // ＬＣＤモジュールの初期化処理

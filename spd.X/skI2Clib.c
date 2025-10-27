@@ -81,7 +81,7 @@ void InitI2C_Master(int speed)
      I2C_SSPSTAT= 0b10000000 ;     // 標準速度モード(スルーレート制御OFF)に設定する(100kHz/1MHz)
      I2C_SSPCON1= 0b00101000 ;     // SDA/SCLピンはI2Cで使用し、マスターモードとする
      if (speed == 0) {
-          I2C_SSPADD = 0x13  ;     // クロック=FOSC/((SSPADD + 1)*4) 8MHz/((0x13+1)*4)=0.1(100KHz)
+          I2C_SSPADD = 0x27  ;     // クロック=FOSC/((SSPADD + 1)*4) 32MHz/((0x27+1)*4)=0.1(100KHz)
      } else {
           I2C_SSPADD = 0x04  ;     // クロック=FOSC/((SSPADD + 1)*4) 8MHz/((0x04+1)*4)=0.4(400KHz)
           I2C_SSPSTAT_SMP = 0 ;    // 高速速度モード(スルーレート制御ON)に設定する(400kHz)
