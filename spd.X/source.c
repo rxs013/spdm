@@ -34,10 +34,12 @@ void __interrupt() isr(void);
 void rotate(void);
 void initialize_system(void);
 void shutdown(void);
-uint16_t spd_to_step(uint8_t spd);
+uint16_t lambda_to_step(uint16_t lbd);
+uint8_t lambda_to_spd(uint16_t lbd);
 void initialize_motor(void);
+void LcdUpdate();
 
-#define _XTAL_FREQ 8000000 //PICのクロックをHzで設定(8MHz)
+#define _XTAL_FREQ 32000000 //PICのクロックをHzで設定(32MHz)
 #define RO_TURN_R (1)
 #define RO_TURN_L (-1)
 #define RO_STOP   (0)
@@ -49,7 +51,8 @@ void initialize_motor(void);
 #define OD3 0x02
 #define PL1 0x03
 #define PL2 0x04
-#define TMR1_pre 17994
+#define LONE 47619 //1km/h時の周期が約47.619ms
+
 // motor macro
 #define MTHLLH()    {LATA=0;LATA=0b01000010;} //pin1/4
 #define MTHLLL()    {LATA=0;LATA=0b01000000;} //pin1
@@ -73,13 +76,14 @@ unsigned char spdval; //速度値
 unsigned long odo; //総走行距離表示値変数
 uint16_t g_motor_pos_step = 0;
 uint16_t g_motor_target_step = 0;
+uint16_t lambda = 65535;
 
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
 
 /* ------------------------------------------------------------------
  * <<setting>>
- * uint16_t spd_to_step(uint8_t spd)
+ * uint16_t lambda_to_step(uint8_t lambda)
  * Make adjustments here to suit the specifications of the various
  * spdmeters.
  * <<note>>
@@ -91,7 +95,7 @@ uint16_t g_motor_target_step = 0;
  * However, please do not use division, as it takes a lot of time to
  * calculate and it will affect the response.
 -------------------------------------------------------------------*/
-uint16_t spd_to_step(uint8_t spd) {
+uint16_t lambda_to_step(uint16_t lbd) {
     uint16_t target_step;
     //10km/h = 15° = 45step
     //20km/h = 38°= 114step
@@ -99,29 +103,30 @@ uint16_t spd_to_step(uint8_t spd) {
     //40km/h = 86 = 258step
     //50km/h = 109°= 327step
     //60km/h = 133°= 399step
-    if(spd==0)
+    float stpfunc = 0;
+    if(lbd < 952) //51km/h over
     {
-        target_step = 0;
-    } else if(spd<11) // 0-10km/h
+        stpfunc = 6.65;
+    } else if(lbd < 1190)  // 31-40km/h
     {          
-        //4.5x
-        target_step = (uint16_t)(((spd << 3) + spd)>>1);
-    } else if(spd<21) //11-20km/h
+        stpfunc = 6.54;
+    } else if(lbd < 1587)  // 31-40km/h
     {
-        //7.5x-36
-        target_step = (uint16_t)((((spd << 4) - spd) >> 1) - 36);
-    }  else if(spd<51)  // 20-50km/h
-    {                     
-        //6.9x-18
-        //≒7x-16-(x/8)
-        //7x-(x+128)/8
-        target_step = (uint16_t)(((spd << 3) - spd) - ((spd + 128) >> 3));
-    } else  //50km/h over
+        stpfunc = 6.45;
+    } else if(lbd < 2381)  // 21-30km/h
+    {          
+        stpfunc = 6.3;
+    } else if(lbd < 4762) //11-20km/h
     {
-        //7.2x-33
-        target_step = (uint16_t)(((spd << 3) - spd) + (spd >> 2) - 33);
+        stpfunc = 5.7;
+    }  else if(lbd < 65535) // 1-10km/h
+    {                    
+        stpfunc = 4.5;
+    } else 
+    {        
+        return 0;
     }
-    
+    target_step = (uint16_t)(stpfunc * LONE / lbd);
     if(target_step > MAX_SPD_STEPS)    
     {
         target_step = MAX_SPD_STEPS;
@@ -130,8 +135,20 @@ uint16_t spd_to_step(uint8_t spd) {
 }
 
 /*******************************************************************************
+*  信号の波長を速度数値へ変換
+*******************************************************************************/
+uint8_t lambda_to_spd(uint16_t lbd) {
+
+    if(lbd <= LONE){
+        return (unsigned char)(LONE / lbd);
+    }else{
+        return 0;
+    }
+}
+
+/*******************************************************************************
 *  メインの処理
-*　メイン関数は基本LCDの表示でお茶を濁す
+*　メイン関数は基本LCDの表示と数値変換でお茶を濁す
 *******************************************************************************/
 void main() 
 {         
@@ -141,15 +158,14 @@ void main()
     T1CONbits.TMR1ON = 1;
     TMR1IE = 1;
     bat_sig = 1;
-    char lcd[8]; //LCD表示用文字列
+    uint16_t lbuf;
     while(1) 
-    {      
-        sprintf(lcd, "%05lu%3u", odo, spdval) ;
-        LCD_SetCursor(0,0);
-        LCD_Puts("ODO  SPD"); 
-        LCD_SetCursor (0,1);
-        LCD_Puts(lcd);
-        g_motor_target_step = spd_to_step(spdval);
+    {        
+        lambda = 4761;
+        lbuf = lambda;
+        spdval = lambda_to_spd(lbuf);
+        g_motor_target_step = lambda_to_step(lbuf);
+        LcdUpdate();
         if(key_sig == 1)
         {
             shutdown();
@@ -158,24 +174,66 @@ void main()
     }     
 }
 
+/** -----------------------------------------------------------------
+ * void LcdUpdate(void)
+------------------------------------------------------------------ */
+void LcdUpdate()
+{   
+    char s[8];
+    char i, j, temp;
+    unsigned long odotmp;
+    i = 0x00;
+    temp = spdval;
+    s[i] = temp % 10 + '0';
+    temp /= 10;    
+    for(i = 1; i < 3; i++){
+        if(temp == 0){
+            s[i] = ' ';
+        }else{
+            s[i] = temp % 10 + '0';
+            temp /= 10;
+        }    
+    } 
+    
+    odotmp = odo;
+    for(i = 3; i < 8; i++){
+        if(odotmp == 0){
+            s[i] = '0';
+        }else{
+            s[i] = odotmp % 10 + '0';
+            odotmp /= 10;
+        }
+    }
+    
+    for (i = 0, j = 7; i < j; i++, j--){
+        temp = s[i];
+        s[i] = s[j];
+        s[j] = temp;
+    }
+    
+    LCD_SetCursor(0,0);
+    LCD_Puts("ODO  SPD"); 
+    LCD_SetCursor (0,1);
+    LCD_Puts(s);    
+}
+
 /* ------------------------------------------------------------------
  * PIC Interrupt
 -------------------------------------------------------------------*/
 void __interrupt() isr(void)
-{   static unsigned char spdpl; //パルスカウント用, 0.05秒間の平均速度変数
-    static unsigned char plbuf[4];
-    static unsigned char pos;
-    unsigned int plint;
-    
+{      
      InterI2C() ;    
      
     if(C1IF)    //車輪速センサパルス検知
     { 
         C1IF    = 0 ;   
-        if(TMR1IE) //オープニング中は速度表示用変数にはノータッチ
+        if(TMR1IE) //オープニング中はラムダ値にはノータッチ
         {
-            spdpl++;
+            lambda = TMR1;
+            TMR1 = 0;        
+            TMR1IF = 0;
         }
+
         if(C1OUT) //+信号だったら
         { 
             pulse++; //総走行距離内部カウント値+1
@@ -192,32 +250,9 @@ void __interrupt() isr(void)
 
     }
 
-    if(TMR1IF)
-    { //21Hz
-        TMR1IF = 0;
-        TMR1 = TMR1_pre;
-        plbuf[pos] = spdpl; 
-        if(pos >= 3)
-        {            
-            //ビットシフト四捨五入
-            plint = (plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 1;
-            if((plint & 0x01) == 0x01)
-            {
-                plint >>= 1;
-                plint++;
-            }
-            else
-            {
-                plint >>= 1;
-            }            
-            spdval = (unsigned char)plint; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
-            pos = 0;
-        }
-        else
-        {
-            pos++;
-        }
-        spdpl = 0;       
+    if(TMR1IF) //タイムアウト(0km/h)
+    { 
+        lambda = TMR1;
     }
 
      // MOTOR ROTATION TIMING
@@ -246,20 +281,20 @@ void rotate(void)
      * Set a timer2 here to control the motor at the most accurate time possible.
      */
     switch (l_acceleration_mode) {
-        case  0: {T2CON = 0b00100100;PR2=222;} break; // 556us
-        case  1: {T2CON = 0b00100100;PR2=228;} break; // 570us
-        case  2: {T2CON = 0b00100100;PR2=240;} break; // 600us
-        case  3: {T2CON = 0b00100100;PR2=252;} break; // 630us
-        case  4: {T2CON = 0b00101100;PR2=225;} break; // 676us
-        case  5: {T2CON = 0b00101100;PR2=247;} break; // 740us
-        case  6: {T2CON = 0b00110100;PR2=239;} break; // 838us
-        case  7: {T2CON = 0b01000100;PR2=231;} break; // 1040us
-        case  8: {T2CON = 0b01010100;PR2=235;} break; // 1292us
-        case  9: {T2CON = 0b01100100;PR2=251;} break; // 1630us
-        case 10: {T2CON = 0b01111100;PR2=251;} break; // 2008us
-        case 11: {T2CON = 0b00100101;PR2=250;} break; // 2500us
-        case 12: {T2CON = 0b00110101;PR2=226;} break; // 3168us
-        default: {T2CON = 0b00111101;PR2=250;} break; // 4000us
+        case  0: {T2CON = 0b00100101;PR2=222;} break; // 556us
+        case  1: {T2CON = 0b00100101;PR2=228;} break; // 570us
+        case  2: {T2CON = 0b00100101;PR2=240;} break; // 600us
+        case  3: {T2CON = 0b00100101;PR2=252;} break; // 630us
+        case  4: {T2CON = 0b00101101;PR2=225;} break; // 676us
+        case  5: {T2CON = 0b00101101;PR2=247;} break; // 740us
+        case  6: {T2CON = 0b00110101;PR2=239;} break; // 838us
+        case  7: {T2CON = 0b01000101;PR2=231;} break; // 1040us
+        case  8: {T2CON = 0b01010101;PR2=235;} break; // 1292us
+        case  9: {T2CON = 0b01100101;PR2=251;} break; // 1630us
+        case 10: {T2CON = 0b01111101;PR2=251;} break; // 2008us
+        case 11: {T2CON = 0b00100110;PR2=250;} break; // 2500us
+        case 12: {T2CON = 0b00110110;PR2=226;} break; // 3168us
+        default: {T2CON = 0b00111110;PR2=250;} break; // 4000us
     }
     
     if (g_motor_pos_step > g_motor_target_step) {
@@ -349,6 +384,7 @@ void initialize_motor(void)
     TMR2IF = 0 ;
     TMR2IE = 1 ;
     uint8_t ii;
+    uint16_t tmp;
     // Start ISR with timer
     rotate();
 
@@ -377,7 +413,8 @@ void initialize_motor(void)
      */
     for(ii=0;;ii+=10) 
     {
-        g_motor_target_step = spd_to_step(ii);
+        tmp = (uint16_t)(LONE / ii);
+        g_motor_target_step = lambda_to_step(tmp);
         if(g_motor_target_step<MAX_SPD_STEPS) {
             while (g_motor_pos_step != g_motor_target_step);
             __delay_ms(200);
@@ -395,7 +432,7 @@ void initialize_motor(void)
  * Initialize PIC microchip system
 ------------------------------------------------------------------ */
 void initialize_system(void) {
-    OSCCON     = 0b01110000 ; // 内部クロックは８ＭＨｚとする
+    OSCCON     = 0b11110000;   // 内部クロックは32ＭＨｚとする
     OPTION_REG = 0b00000000 ;
     ANSELA     = 0b00000100 ; // C12IN-のみアナログとする
     ANSELB     = 0b00000000 ; // AN5-AN11は使用しない全てデジタルI/Oとする
@@ -426,10 +463,10 @@ void initialize_system(void) {
     CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
     C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
     C1IE    = 1 ;            // コンパレータ1割込みを許可する
-    T1CON = 0b00010000;
+    T1CON = 0b00110000;
     TMR1IF = 0 ;   
     TMR1IE = 0 ;
-    TMR1 = TMR1_pre;
+    TMR1 = 0;
 
     // Ｉ２Ｃの初期化処理(通信速度400KHz※書類上)
     InitI2C_Master(1) ;
