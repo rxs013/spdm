@@ -83,7 +83,7 @@ uint16_t lambda = 65535;
 
 /* ------------------------------------------------------------------
  * <<setting>>
- * uint16_t lambda_to_step(uint8_t lambda)
+ * uint16_t lambda_to_step(uint8_t lbd)
  * Make adjustments here to suit the specifications of the various
  * spdmeters.
  * <<note>>
@@ -176,6 +176,7 @@ void main()
 
 /** -----------------------------------------------------------------
  * void LcdUpdate(void)
+ * LCD表示更新
 ------------------------------------------------------------------ */
 void LcdUpdate()
 {   
