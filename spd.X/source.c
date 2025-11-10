@@ -67,6 +67,7 @@ void LcdUpdate();
                                     // Default is 4.
 #define MAX_SPD_STEPS     (540)   // Maximum value on the spdmeter scale. 
                                     // 540 means that the shaft rotates 180 degrees.
+#define MAX_SPD_LAMBDA    (187)
 #define MT_BUFFER_COUNT     (ACC_MODE_LO-ACC_MODE_HI)
 #define MT_BUFFER_COUNT_END (MT_BUFFER_COUNT-1)
 
@@ -104,7 +105,10 @@ uint16_t lambda_to_step(uint16_t lbd) {
     //50km/h = 109°= 327step
     //60km/h = 133°= 399step
     float stpfunc = 0;
-    if(lbd < 952) //51km/h over
+    if(lbd < 587){
+        return MAX_SPD_STEPS;
+    }
+    else if(lbd < 952) //51km/h over
     {
         stpfunc = 6.65;
     } else if(lbd < 1190)  // 31-40km/h
@@ -137,9 +141,11 @@ uint16_t lambda_to_step(uint16_t lbd) {
 /*******************************************************************************
 *  信号の波長を速度数値へ変換
 *******************************************************************************/
-uint8_t lambda_to_spd(uint16_t lbd) {
+unsigned char lambda_to_spd(uint16_t lbd) {
 
-    if(lbd <= LONE){
+    if(lbd < MAX_SPD_LAMBDA){
+        return 0xFF;
+    }else if(lbd <= LONE){
         return (unsigned char)(LONE / lbd);
     }else{
         return 0;
@@ -183,6 +189,10 @@ void LcdUpdate()
     char s[8];
     char i, j, temp;
     unsigned long odotmp;
+    
+    //ODO=12345km,SPD=9km/h
+    //↓
+    //9  54321
     i = 0x00;
     temp = spdval;
     s[i] = temp % 10 + '0';
@@ -206,12 +216,17 @@ void LcdUpdate()
         }
     }
     
+    //9  54321
+    //↓
+    //12345  9
     for (i = 0, j = 7; i < j; i++, j--){
         temp = s[i];
         s[i] = s[j];
         s[j] = temp;
     }
     
+    //ODO  SPD
+    //12345  9
     LCD_SetCursor(0,0);
     LCD_Puts("ODO  SPD"); 
     LCD_SetCursor (0,1);
