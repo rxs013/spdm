@@ -51,7 +51,14 @@ void LcdUpdate();
 #define OD3 0x02
 #define PL1 0x03
 #define PL2 0x04
+#define LZERO 65535
 #define LONE 47619 //1km/h時の周期が約47.619ms
+#define L10 4762
+#define L20 2381
+#define L30 1587
+#define L40 1190
+#define L50 952
+#define DISP_MAX 0xFF
 
 // motor macro
 #define MTHLLH()    {LATA=0;LATA=0b01000010;} //pin1/4
@@ -68,6 +75,7 @@ void LcdUpdate();
 #define MAX_SPD_STEPS     (540)   // Maximum value on the spdmeter scale. 
                                     // 540 means that the shaft rotates 180 degrees.
 #define MAX_SPD_LAMBDA    (187)
+#define MAX_STEP_LAMBDA   (587)
 #define MT_BUFFER_COUNT     (ACC_MODE_LO-ACC_MODE_HI)
 #define MT_BUFFER_COUNT_END (MT_BUFFER_COUNT-1)
 
@@ -105,25 +113,25 @@ uint16_t lambda_to_step(uint16_t lbd) {
     //50km/h = 109°= 327step
     //60km/h = 133°= 399step
     float stpfunc = 0;
-    if(lbd < 587){
+    if(lbd < MAX_STEP_LAMBDA){
         return MAX_SPD_STEPS;
     }
-    else if(lbd < 952) //51km/h over
+    else if(lbd < L50) //51km/h over
     {
         stpfunc = 6.65;
-    } else if(lbd < 1190)  // 31-40km/h
+    } else if(lbd < L40)  // 31-40km/h
     {          
         stpfunc = 6.54;
-    } else if(lbd < 1587)  // 31-40km/h
+    } else if(lbd < L30)  // 31-40km/h
     {
         stpfunc = 6.45;
-    } else if(lbd < 2381)  // 21-30km/h
+    } else if(lbd < L20)  // 21-30km/h
     {          
         stpfunc = 6.3;
-    } else if(lbd < 4762) //11-20km/h
+    } else if(lbd < L10) //11-20km/h
     {
         stpfunc = 5.7;
-    }  else if(lbd < 65535) // 1-10km/h
+    }  else if(lbd < LZERO) // 1-10km/h
     {                    
         stpfunc = 4.5;
     } else 
@@ -144,7 +152,7 @@ uint16_t lambda_to_step(uint16_t lbd) {
 unsigned char lambda_to_spd(uint16_t lbd) {
 
     if(lbd < MAX_SPD_LAMBDA){
-        return 0xFF;
+        return DISP_MAX;
     }else if(lbd <= LONE){
         return (unsigned char)(LONE / lbd);
     }else{
@@ -167,7 +175,6 @@ void main()
     uint16_t lbuf;
     while(1) 
     {        
-        lambda = 4761;
         lbuf = lambda;
         spdval = lambda_to_spd(lbuf);
         g_motor_target_step = lambda_to_step(lbuf);
