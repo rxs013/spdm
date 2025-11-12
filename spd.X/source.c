@@ -35,7 +35,6 @@ void rotate(void);
 void initialize_system(void);
 void shutdown(void);
 uint16_t lambda_to_step(uint16_t lbd);
-uint8_t lambda_to_spd(uint16_t lbd);
 void initialize_motor(void);
 void LcdUpdate();
 
@@ -85,7 +84,7 @@ unsigned char spdval; //速度値
 unsigned long odo; //総走行距離表示値変数
 uint16_t g_motor_pos_step = 0;
 uint16_t g_motor_target_step = 0;
-uint16_t lambda = 65535;
+uint16_t lambda = LZERO;
 
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
@@ -147,20 +146,6 @@ uint16_t lambda_to_step(uint16_t lbd) {
 }
 
 /*******************************************************************************
-*  信号の波長を速度数値へ変換
-*******************************************************************************/
-unsigned char lambda_to_spd(uint16_t lbd) {
-
-    if(lbd < MAX_SPD_LAMBDA){
-        return DISP_MAX;
-    }else if(lbd <= LONE){
-        return (unsigned char)(LONE / lbd);
-    }else{
-        return 0;
-    }
-}
-
-/*******************************************************************************
 *  メインの処理
 *　メイン関数は基本LCDの表示と数値変換でお茶を濁す
 *******************************************************************************/
@@ -176,7 +161,14 @@ void main()
     while(1) 
     {        
         lbuf = lambda;
-        spdval = lambda_to_spd(lbuf);
+        if(lbuf < MAX_SPD_LAMBDA){
+            spdval = DISP_MAX;
+        }else if(lbuf <= LONE){
+            spdval = (unsigned char)(LONE / lbuf);
+        }else{
+            spdval = 0;
+        }
+        
         g_motor_target_step = lambda_to_step(lbuf);
         LcdUpdate();
         if(key_sig == 1)
@@ -436,7 +428,11 @@ void initialize_motor(void)
      */
     for(ii=0;;ii+=10) 
     {
-        tmp = (uint16_t)(LONE / ii);
+        if(ii == 0){
+            tmp = LZERO;
+        }else{
+            tmp = (uint16_t)(LONE / ii);
+        }
         g_motor_target_step = lambda_to_step(tmp);
         if(g_motor_target_step<MAX_SPD_STEPS) {
             while (g_motor_pos_step != g_motor_target_step);
