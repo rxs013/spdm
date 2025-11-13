@@ -27,7 +27,6 @@
 // Use project enums instead of #define for ON and OFF.
 
 #include <xc.h>
-#include <stdio.h>
 #include "skI2Clib.h"
 #include "skI2CLCDlib.h"
 void __interrupt() isr(void);
@@ -141,14 +140,52 @@ void main()
     T1CONbits.TMR1ON = 1;
     TMR1IE = 1;
     bat_sig = 1;
-    char lcd[8]; //LCD表示用文字列
     while(1) 
     {      
-        sprintf(lcd, "%05lu%3u", odo, spdval) ;
+        char s[8];
+        char i, j, temp;
+        unsigned long odotmp;
+    
+        //ODO=12345km,SPD=9km/h
+        //↓
+        //9  54321
+        i = 0x00;
+        temp = spdval;
+        s[i] = temp % 10 + '0';
+        temp /= 10;    
+        for(i = 1; i < 3; i++){
+            if(temp == 0){
+                s[i] = ' ';
+            }else{
+                s[i] = temp % 10 + '0';
+                temp /= 10;
+            }    
+        }
+            odotmp = odo;
+        for(i = 3; i < 8; i++){
+            if(odotmp == 0){
+                s[i] = '0';
+            }else{
+                s[i] = odotmp % 10 + '0';
+                odotmp /= 10;
+            }
+        }
+    
+        //9  54321
+        //↓
+        //12345  9
+        for (i = 0, j = 7; i < j; i++, j--){
+            temp = s[i];
+            s[i] = s[j];
+            s[j] = temp;
+        }
+    
+        //ODO  SPD
+        //12345  9
         LCD_SetCursor(0,0);
         LCD_Puts("ODO  SPD"); 
         LCD_SetCursor (0,1);
-        LCD_Puts(lcd);
+        LCD_Puts(s);    
         g_motor_target_step = spd_to_step(spdval);
         if(key_sig == 1)
         {
