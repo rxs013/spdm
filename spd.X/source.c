@@ -425,13 +425,10 @@ void initialize_motor(void)
     /*
      * Just a demonstration, feel free to do as you like with it.
      */
-    for(ii=0;;ii+=10) 
+    for(ii=1;;ii+=10) 
     {
-        if(ii == 0){
-            tmp = LZERO;
-        }else{
-            tmp = (uint16_t)(LONE / ii);
-        }
+        tmp = (uint16_t)(LONE / ii);
+        if(ii == 1) ii = 0;
         g_motor_target_step = lambda_to_step(tmp);
         if(g_motor_target_step<MAX_SPD_STEPS) {
             while (g_motor_pos_step != g_motor_target_step);
