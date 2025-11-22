@@ -441,7 +441,7 @@ void initialize_system(void) {
     WPUB       = 0b00000001 ; // RB0は内部プルアップ抵抗を指定する
     PORTA      = 0b00000000 ; // RA出力ピンの初期化(全てLOWにする)
     PORTB      = 0b00000000 ; // RB出力ピンの初期化(全てLOWにする)
-    INTCON = 0b11010000; //割り込み設定
+    INTCON = 0b11000000; //割り込み設定
     DACCON0 = 0b11000000 ;   // VDD/VSSを使用、DACOUTピン(RA2)使わない
     DACCON1 = 7;           // 約1.2Vを出力( 5V*(7/2^5)=1.19xxx )
     odo = EEPROM_READ(OD3); //前回記憶した総走行距離1の読み込み
