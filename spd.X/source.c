@@ -77,10 +77,9 @@ void LcdUpdate();
 #define MT_BUFFER_COUNT     (ACC_MODE_LO-ACC_MODE_HI)
 #define MT_BUFFER_COUNT_END (MT_BUFFER_COUNT-1)
 
-
+unsigned long odo; //総走行距離表示値変数
 unsigned int pulse; //総走行距離内部カウント変数
 unsigned char spdval; //速度値
-unsigned long odo; //総走行距離表示値変数
 uint16_t g_motor_pos_step = 0;
 uint16_t g_motor_target_step = 0;
 uint16_t lambda = LZERO;
@@ -158,7 +157,12 @@ void main()
     bat_sig = 1;
     uint16_t lbuf;
     while(1) 
-    {        
+    {
+        if(key_sig == 1)
+        {
+            shutdown();
+            break;
+        }
         lbuf = lambda;
         if(lbuf < MAX_SPD_LAMBDA){
             spdval = DISP_MAX;
@@ -170,11 +174,6 @@ void main()
         
         g_motor_target_step = lambda_to_step(lbuf);
         LcdUpdate();
-        if(key_sig == 1)
-        {
-            shutdown();
-            break;
-        }
     }     
 }
 
@@ -432,7 +431,7 @@ void initialize_motor(void)
         g_motor_target_step = lambda_to_step(tmp);
         if(g_motor_target_step<MAX_SPD_STEPS) {
             while (g_motor_pos_step != g_motor_target_step);
-            __delay_ms(200);
+            __delay_ms(150);
             continue;
         }
         break;
@@ -499,24 +498,26 @@ void initialize_system(void) {
  * memory distances and reset motor pos
 ------------------------------------------------------------------ */
 void shutdown()
-{    
-     C1IE = 0;
-     TMR1IE= 0;
-     LCD_Clear();
-     LCD_SetCursor(0,0) ;        // 表示位置を設定する
-     LCD_Puts("MOVABLE") ;
-     LCD_SetCursor(3,1) ;        // 表示位置を設定する
-     LCD_Puts("STUFF") ;
+{   
     g_motor_target_step = 0;    //針を0km/hへ
+    unsigned long odobuf = odo;
+    unsigned int pulsebuf = pulse;
+    C1IE = 0;
+    TMR1IE= 0;
+    LCD_Clear();
+    LCD_SetCursor(0,0) ;        // 表示位置を設定する
+    LCD_Puts("MOVABLE") ;
+    LCD_SetCursor(3,1) ;        // 表示位置を設定する
+    LCD_Puts("STUFF") ;
     unsigned char od1, od2, od3, pl1, pl2; //EEPROM記録用の贄
     unsigned int sw; //贄の贄
-    od1 = odo & 0xFF; //マスクして8bit化
-    sw = (unsigned int)(odo >> 8);
+    od1 = odobuf & 0xFF; //マスクして8bit化
+    sw = (unsigned int)(odobuf >> 8);
     od2 = sw & 0xFF; //ビットシフトしてマスク
-    sw = odo >> 16;
+    sw = odobuf >> 16;
     od3 = sw & 0xFF; //ビットシフトしてマスク
-    pl1 = pulse & 0xFF; //マスクして8bit化
-    sw = pulse >> 8;
+    pl1 = pulsebuf & 0xFF; //マスクして8bit化
+    sw = pulsebuf >> 8;
     pl2 = sw & 0xFF; //ビットシフトしてマスク
     if(EEPROM_READ(OD1) != od1){//上位8bitが記憶されている値と同じでなければ
     EEPROM_WRITE(OD1, od1); //総走行距離1 
