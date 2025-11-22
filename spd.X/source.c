@@ -82,7 +82,7 @@ unsigned int pulse; //総走行距離内部カウント変数
 unsigned char spdval; //速度値
 uint16_t g_motor_pos_step = 0;
 uint16_t g_motor_target_step = 0;
-uint16_t lambda = LZERO;
+uint16_t g_lambda = LZERO;
 
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
@@ -152,30 +152,27 @@ void main()
     initialize_system();
     initialize_motor();
     LCD_Clear();    
-    T1CONbits.TMR1ON = 1;
-    TMR1IE = 1;
-    bat_sig = 1;
-    uint16_t lbuf;
+    bat_sig = 1;    
     while(1) 
     {
-        if(key_sig == 1)
-        {
-            shutdown();
-            break;
-        }
-        lbuf = lambda;
+        uint16_t lbuf = g_lambda;
         if(lbuf < MAX_SPD_LAMBDA){
             spdval = DISP_MAX;
         }else if(lbuf <= LONE){
             spdval = (unsigned char)(LONE / lbuf);
         }else{
             spdval = 0;
-        }
-        
+        }        
         g_motor_target_step = lambda_to_step(lbuf);
         LcdUpdate();
+        if(key_sig)
+        {            
+            break;
+        }
     }     
-}
+    shutdown();
+}     
+
 
 /** -----------------------------------------------------------------
  * void LcdUpdate(void)
@@ -202,7 +199,7 @@ void LcdUpdate()
             temp /= 10;
         }    
     } 
-    
+
     odotmp = odo;
     for(i = 3; i < 8; i++){
         if(odotmp == 0){
@@ -212,7 +209,7 @@ void LcdUpdate()
             odotmp /= 10;
         }
     }
-    
+
     //9  54321
     //↓
     //12345  9
@@ -225,10 +222,11 @@ void LcdUpdate()
     //ODO  SPD
     //12345  9
     LCD_SetCursor(0,0);
-    LCD_Puts("ODO  SPD"); 
+    LCD_Puts("ODO  SPD");
     LCD_SetCursor (0,1);
-    LCD_Puts(s);    
+    LCD_Puts(s);
 }
+
 
 /* ------------------------------------------------------------------
  * PIC Interrupt
@@ -242,9 +240,8 @@ void __interrupt() isr(void)
         C1IF    = 0 ;   
         if(TMR1IE) //オープニング中はラムダ値にはノータッチ
         {
-            lambda = TMR1;
+            g_lambda = TMR1;
             TMR1 = 0;        
-            TMR1IF = 0;
         }
 
         if(C1OUT) //+信号だったら
@@ -265,7 +262,8 @@ void __interrupt() isr(void)
 
     if(TMR1IF) //タイムアウト(0km/h)
     { 
-        lambda = TMR1;
+        g_lambda = LZERO;
+        TMR1IF = 0;
     }
 
      // MOTOR ROTATION TIMING
@@ -455,7 +453,7 @@ void initialize_system(void) {
     WPUB       = 0b00000001 ; // RB0は内部プルアップ抵抗を指定する
     PORTA      = 0b00000000 ; // RA出力ピンの初期化(全てLOWにする)
     PORTB      = 0b00000000 ; // RB出力ピンの初期化(全てLOWにする)
-    INTCON = 0b11010000; //割り込み設定
+    INTCON = 0b11000000; //割り込み設定
     DACCON0 = 0b11000000 ;   // VDD/VSSを使用、DACOUTピン(RA2)使わない
     DACCON1 = 7;           // 約1.2Vを出力( 5V*(7/2^5)=1.19xxx )
     odo = EEPROM_READ(OD3); //前回記憶した総走行距離1の読み込み
@@ -472,16 +470,7 @@ void initialize_system(void) {
     if(pulse>37800){
         pulse = 0;    
     }   
-
-    CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
-    CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
-    C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
-    C1IE    = 1 ;            // コンパレータ1割込みを許可する
-    T1CON = 0b00110000;
-    TMR1IF = 0 ;   
-    TMR1IE = 0 ;
-    TMR1 = 0;
-
+    
     // Ｉ２Ｃの初期化処理(通信速度400KHz※書類上)
     InitI2C_Master(1) ;
     // ＬＣＤモジュールの初期化処理
@@ -490,7 +479,16 @@ void initialize_system(void) {
     LCD_SetCursor(0,0) ;        // 表示位置を設定する
     LCD_Puts("STREAM") ;
     LCD_SetCursor(1,1) ;        // 表示位置を設定する
-    LCD_Puts("EVOLVED") ;    
+    LCD_Puts("EVOLVED") ;  
+    
+    CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
+    CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
+    C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
+    C1IE    = 1 ;            // コンパレータ1割込みを許可する
+    T1CON = 0b00110001;
+    TMR1IF = 0 ;   
+    TMR1IE = 1 ;
+    TMR1 = 0;  
 }
 
 /** -----------------------------------------------------------------
@@ -500,10 +498,7 @@ void initialize_system(void) {
 void shutdown()
 {   
     g_motor_target_step = 0;    //針を0km/hへ
-    unsigned long odobuf = odo;
-    unsigned int pulsebuf = pulse;
     C1IE = 0;
-    TMR1IE= 0;
     LCD_Clear();
     LCD_SetCursor(0,0) ;        // 表示位置を設定する
     LCD_Puts("MOVABLE") ;
@@ -511,13 +506,13 @@ void shutdown()
     LCD_Puts("STUFF") ;
     unsigned char od1, od2, od3, pl1, pl2; //EEPROM記録用の贄
     unsigned int sw; //贄の贄
-    od1 = odobuf & 0xFF; //マスクして8bit化
-    sw = (unsigned int)(odobuf >> 8);
+    od1 = odo & 0xFF; //マスクして8bit化
+    sw = (unsigned int)(odo >> 8);
     od2 = sw & 0xFF; //ビットシフトしてマスク
-    sw = odobuf >> 16;
+    sw = odo >> 16;
     od3 = sw & 0xFF; //ビットシフトしてマスク
-    pl1 = pulsebuf & 0xFF; //マスクして8bit化
-    sw = pulsebuf >> 8;
+    pl1 = pulse & 0xFF; //マスクして8bit化
+    sw = pulse >> 8;
     pl2 = sw & 0xFF; //ビットシフトしてマスク
     if(EEPROM_READ(OD1) != od1){//上位8bitが記憶されている値と同じでなければ
     EEPROM_WRITE(OD1, od1); //総走行距離1 
