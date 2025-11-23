@@ -35,7 +35,7 @@ void initialize_system(void);
 void shutdown(void);
 uint16_t lambda_to_step(uint16_t lbd);
 void initialize_motor(void);
-void LcdUpdate();
+void LcdUpdate(uint16_t lbuf);
 
 #define _XTAL_FREQ 32000000 //PICのクロックをHzで設定(32MHz)
 #define RO_TURN_R (1)
@@ -79,7 +79,8 @@ void LcdUpdate();
 
 unsigned long odo; //総走行距離表示値変数
 unsigned int pulse; //総走行距離内部カウント変数
-unsigned char spdval; //速度値
+_Bool timeout;
+unsigned char upd = 0;
 uint16_t g_motor_pos_step = 0;
 uint16_t g_motor_target_step = 0;
 uint16_t g_lambda = LZERO;
@@ -152,19 +153,16 @@ void main()
     initialize_system();
     initialize_motor();
     LCD_Clear();    
+    TMR1IE = 1;
     bat_sig = 1;    
     while(1) 
     {
         uint16_t lbuf = g_lambda;
-        if(lbuf < MAX_SPD_LAMBDA){
-            spdval = DISP_MAX;
-        }else if(lbuf <= LONE){
-            spdval = (unsigned char)(LONE / lbuf);
-        }else{
-            spdval = 0;
-        }        
-        g_motor_target_step = lambda_to_step(lbuf);
-        LcdUpdate();
+        g_motor_target_step = lambda_to_step(lbuf);     
+        if(upd == 0)
+        {
+            LcdUpdate(lbuf);
+        }
         if(key_sig)
         {            
             break;
@@ -178,17 +176,22 @@ void main()
  * void LcdUpdate(void)
  * LCD表示更新
 ------------------------------------------------------------------ */
-void LcdUpdate()
+void LcdUpdate(uint16_t lbuf)
 {   
     char s[8];
     char i, j, temp;
     unsigned long odotmp;
-    
+    if(lbuf < MAX_SPD_LAMBDA){
+        temp = DISP_MAX;
+    }else if(lbuf <= LONE){
+        temp = (unsigned char)(LONE / lbuf);
+    }else{
+        temp = 0;
+    }   
     //ODO=12345km,SPD=9km/h
     //↓
     //9  54321
     i = 0x00;
-    temp = spdval;
     s[i] = temp % 10 + '0';
     temp /= 10;    
     for(i = 1; i < 3; i++){
@@ -225,6 +228,7 @@ void LcdUpdate()
     LCD_Puts("ODO  SPD");
     LCD_SetCursor (0,1);
     LCD_Puts(s);
+    upd = 10;
 }
 
 
@@ -237,11 +241,15 @@ void __interrupt() isr(void)
      
     if(C1IF)    //車輪速センサパルス検知
     { 
-        C1IF    = 0 ;   
         if(TMR1IE) //オープニング中はラムダ値にはノータッチ
         {
-            g_lambda = TMR1;
-            TMR1 = 0;        
+            if(!timeout)
+            {
+                g_lambda = TMR1;    
+            }
+            TMR1 = 0;
+            timeout = 0;
+            TMR1IF = 0;
         }
 
         if(C1OUT) //+信号だったら
@@ -257,11 +265,12 @@ void __interrupt() isr(void)
                 pulse = 0; //内部カウントリセット
             }
         }
-
+        C1IF = 0 ;
     }
 
     if(TMR1IF) //タイムアウト(0km/h)
     { 
+        timeout = 1;
         g_lambda = LZERO;
         TMR1IF = 0;
     }
@@ -269,9 +278,15 @@ void __interrupt() isr(void)
      // MOTOR ROTATION TIMING
     if (TMR2IF) 
     {
-        TMR2IF = 0;
         rotate();
+        TMR2IF = 0;
     } // end of TMR2IF 
+     
+     if(TMR4IF)
+     {
+         if(upd>0)upd--;
+         TMR4IF = 0;
+     }
 }
 
 /* ------------------------------------------------------------------
@@ -487,8 +502,11 @@ void initialize_system(void) {
     C1IE    = 1 ;            // コンパレータ1割込みを許可する
     T1CON = 0b00110001;
     TMR1IF = 0 ;   
-    TMR1IE = 1 ;
+    TMR1IE = 0 ;
     TMR1 = 0;  
+    T4CON = 0b01111111;
+    PR4 = 255;
+    TMR4IE = 1 ;
 }
 
 /** -----------------------------------------------------------------
