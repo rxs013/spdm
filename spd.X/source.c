@@ -79,7 +79,6 @@ void LcdUpdate(uint16_t lbuf);
 
 unsigned long odo; //総走行距離表示値変数
 unsigned int pulse; //総走行距離内部カウント変数
-_Bool timeout;
 unsigned char upd = 0;
 uint16_t g_motor_pos_step = 0;
 uint16_t g_motor_target_step = 0;
@@ -161,7 +160,9 @@ void main()
         g_motor_target_step = lambda_to_step(lbuf);     
         if(upd == 0)
         {
+            //毎回更新していると暴れて判読不能なのでTMR4で減算のupdカウントが0になったら更新
             LcdUpdate(lbuf);
+            upd = 4;
         }
         if(key_sig)
         {            
@@ -226,9 +227,8 @@ void LcdUpdate(uint16_t lbuf)
     //12345  9
     LCD_SetCursor(0,0);
     LCD_Puts("ODO  SPD");
-    LCD_SetCursor (0,1);
+    LCD_SetCursor(0,1);
     LCD_Puts(s);
-    upd = 10;
 }
 
 
@@ -236,23 +236,40 @@ void LcdUpdate(uint16_t lbuf)
  * PIC Interrupt
 -------------------------------------------------------------------*/
 void __interrupt() isr(void)
-{      
+{     
+    static _Bool active;
+    static uint32_t buf;
      InterI2C() ;    
      
     if(C1IF)    //車輪速センサパルス検知
     { 
         if(TMR1IE) //オープニング中はラムダ値にはノータッチ
         {
-            if(!timeout)
+            if(active)
             {
-                g_lambda = TMR1;    
+                //矩形波が出ていないっぽいので+-の平均をとる
+                if(!C1OUT)
+                {
+                    buf = TMR1;
+                }
+                if(C1OUT && buf > 0)
+                {
+                    buf += TMR1; 
+                    //奇数なら+1→/2で実質四捨五入
+                    if((buf & 0x0001) == 0x0001)
+                    {
+                    buf++;    
+                    }
+                    g_lambda = (uint16_t)(buf >> 1);                
+                    buf = 0;
+                }
             }
             TMR1 = 0;
-            timeout = 0;
+            active = 1;
             TMR1IF = 0;
         }
 
-        if(C1OUT) //+信号だったら
+        if(C1OUT) //+信号だったら走行距離カウント
         { 
             pulse++; //総走行距離内部カウント値+1
             if(pulse >= 37800) //60km/hで1400rpmのシャフトに27丁の歯車。あとはお察し
@@ -270,8 +287,10 @@ void __interrupt() isr(void)
 
     if(TMR1IF) //タイムアウト(0km/h)
     { 
-        timeout = 1;
+        active = 0;
+        buf = 0;
         g_lambda = LZERO;
+        TMR1 = 0;
         TMR1IF = 0;
     }
 
@@ -282,7 +301,7 @@ void __interrupt() isr(void)
         TMR2IF = 0;
     } // end of TMR2IF 
      
-     if(TMR4IF)
+     if(TMR4IF) //LCDリフレッシュ遅延
      {
          if(upd>0)upd--;
          TMR4IF = 0;
