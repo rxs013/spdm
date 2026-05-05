@@ -115,27 +115,27 @@ uint16_t lambda_to_step(uint16_t lbd) {
     }
     else if(lbd < L50) //51km/h over
     {
-        stpfunc = 6.65;
+        stpfunc = 665;
     } else if(lbd < L40)  // 31-40km/h
     {          
-        stpfunc = 6.54;
+        stpfunc = 654;
     } else if(lbd < L30)  // 31-40km/h
     {
-        stpfunc = 6.45;
+        stpfunc = 645;
     } else if(lbd < L20)  // 21-30km/h
     {          
-        stpfunc = 6.3;
+        stpfunc = 630;
     } else if(lbd < L10) //11-20km/h
     {
-        stpfunc = 5.7;
+        stpfunc = 570;
     }  else if(lbd < LZERO) // 1-10km/h
-    {                    
-        stpfunc = 4.5;
+    {                   
+        stpfunc = 400;
     } else 
     {        
         return 0;
     }
-    target_step = (uint16_t)(stpfunc * LONE / lbd);
+    target_step = (uint16_t)(stpfunc * LONE / lbd / 100);
     if(target_step > MAX_SPD_STEPS)    
     {
         target_step = MAX_SPD_STEPS;
