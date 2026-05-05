@@ -28,6 +28,7 @@
 
 #include <xc.h>
 #include "skI2Clib.h"
+#include "app_config.h" // 新しい設定ファイル
 #include "skI2CLCDlib.h"
 void __interrupt() isr(void);
 void rotate(void);
@@ -109,33 +110,33 @@ uint16_t lambda_to_step(uint16_t lbd) {
     //40km/h = 86 = 258step
     //50km/h = 109°= 327step
     //60km/h = 133°= 399step
-    float stpfunc = 0;
+    uint16_t stpfunc = 0;
     if(lbd < MAX_STEP_LAMBDA){
         return MAX_SPD_STEPS;
     }
     else if(lbd < L50) //51km/h over
     {
-        stpfunc = 665;
+        stpfunc = STPFUNC_SPEED_OVER_50KMH;
     } else if(lbd < L40)  // 31-40km/h
     {          
-        stpfunc = 654;
+        stpfunc = STPFUNC_SPEED_41_50KMH;
     } else if(lbd < L30)  // 31-40km/h
     {
-        stpfunc = 645;
+        stpfunc = STPFUNC_SPEED_31_40KMH;
     } else if(lbd < L20)  // 21-30km/h
     {          
-        stpfunc = 630;
+        stpfunc = STPFUNC_SPEED_21_30KMH;
     } else if(lbd < L10) //11-20km/h
     {
-        stpfunc = 570;
+        stpfunc = STPFUNC_SPEED_11_20KMH;
     }  else if(lbd < LZERO) // 1-10km/h
     {                   
-        stpfunc = 400;
+        stpfunc = STPFUNC_SPEED_1_10KMH;
     } else 
     {        
         return 0;
     }
-    target_step = (uint16_t)(stpfunc * LONE / lbd / 100);
+    target_step = (uint16_t)((uint32_t)stpfunc * LONE / lbd / 100);
     if(target_step > MAX_SPD_STEPS)    
     {
         target_step = MAX_SPD_STEPS;
@@ -508,12 +509,12 @@ void initialize_system(void) {
     // Ｉ２Ｃの初期化処理(通信速度400KHz※書類上)
     InitI2C_Master(1) ;
     // ＬＣＤモジュールの初期化処理
-    // ICON OFF,コントラスト(0-63),VDD=5Vで使う,LCDは8文字列
+    // ICON OFF,コントラスト(0-63),VDD=5Vで使う,LCDは8文字列 (表示メッセージはapp_config.hで設定)
     LCD_Init(LCD_NOT_ICON,63,LCD_VDD5V,8) ;
     LCD_SetCursor(0,0) ;        // 表示位置を設定する
-    LCD_Puts("STREAM") ;
-    LCD_SetCursor(1,1) ;        // 表示位置を設定する
-    LCD_Puts("EVOLVED") ;  
+    LCD_Puts(LCD_OPENING_LINE1) ;
+    LCD_SetCursor(0,1) ;        // 表示位置を設定する
+    LCD_Puts(LCD_OPENING_LINE2) ;  
     
     CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
     CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
@@ -538,9 +539,9 @@ void shutdown()
     C1IE = 0;
     LCD_Clear();
     LCD_SetCursor(0,0) ;        // 表示位置を設定する
-    LCD_Puts("MOVABLE") ;
-    LCD_SetCursor(3,1) ;        // 表示位置を設定する
-    LCD_Puts("STUFF") ;
+    LCD_Puts(LCD_SHUTDOWN_LINE1) ;
+    LCD_SetCursor(0,1) ;        // 表示位置を設定する
+    LCD_Puts(LCD_SHUTDOWN_LINE2) ;
     unsigned char od1, od2, od3, pl1, pl2; //EEPROM記録用の贄
     unsigned int sw; //贄の贄
     od1 = odo & 0xFF; //マスクして8bit化

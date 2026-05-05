@@ -6,6 +6,7 @@
                    projectFiles="true">
       <itemPath>skI2CLCDlib.h</itemPath>
       <itemPath>skI2Clib.h</itemPath>
+      <itemPath>app_config.h</itemPath>
     </logicalFolder>
     <logicalFolder name="ExternalFiles"
                    displayName="Important Files"
@@ -692,6 +693,7 @@
         <property key="event.recorder.debugger.behavior" value="Running"/>
         <property key="event.recorder.enabled" value="false"/>
         <property key="event.recorder.scvd.files" value=""/>
+        <property key="firmware.download.all" value="false"/>
         <property key="hwtoolclock.frcindebug" value="false"/>
         <property key="lastid" value=""/>
         <property key="memories.aux" value="false"/>
@@ -1876,6 +1878,7 @@
         <property key="event.recorder.debugger.behavior" value="Running"/>
         <property key="event.recorder.enabled" value="false"/>
         <property key="event.recorder.scvd.files" value=""/>
+        <property key="firmware.download.all" value="false"/>
         <property key="hwtoolclock.frcindebug" value="false"/>
         <property key="lastid" value=""/>
         <property key="memories.aux" value="false"/>
