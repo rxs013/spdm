@@ -161,9 +161,9 @@ void main()
         g_motor_target_step = lambda_to_step(lbuf);     
         if(upd == 0)
         {
-            //毎回更新していると暴れて判読不能なのでTMR4で減算のupdカウントが0になったら更新
+            //毎回更新していると暴れて判読不能なのでTMR4で減算のupdカウントが0になったらLCD表示を更新
             LcdUpdate(lbuf);
-            upd = 4;
+            upd = UPD_INT; 
         }
         if(key_sig)
         {            
@@ -273,7 +273,7 @@ void __interrupt() isr(void)
         if(C1OUT) //+信号だったら走行距離カウント
         { 
             pulse++; //総走行距離内部カウント値+1
-            if(pulse >= 37800) //60km/hで1400rpmのシャフトに27丁の歯車。あとはお察し
+            if(pulse >= PULSE_RATE) //60km/hで1400rpmのシャフトに27丁の歯車。あとはお察し
             {
                 odo++; //走行距離+1km
                 if(odo > 99999)
@@ -524,7 +524,7 @@ void initialize_system(void) {
     TMR1IF = 0 ;   
     TMR1IE = 0 ;
     TMR1 = 0;  
-    T4CON = 0b01111111;
+    T4CON = 0b01111111; //32.7ms
     PR4 = 255;
     TMR4IE = 1 ;
 }
