@@ -17,7 +17,7 @@
 #ifndef _XTAL_FREQ
  // Unless already defined assume 8MHz system frequency
  // This definition is required to calibrate __delay_us() and __delay_ms()
- #define _XTAL_FREQ 8000000 // 使用するPIC等により動作周波数値を設定する
+ #define _XTAL_FREQ 32000000 // 使用するPIC等により動作周波数値を設定する
 #endif
 
 // 定数の定義

@@ -28,15 +28,17 @@
 
 #include <xc.h>
 #include "skI2Clib.h"
+#include "app_config.h" // 新しい設定ファイル
 #include "skI2CLCDlib.h"
 void __interrupt() isr(void);
 void rotate(void);
 void initialize_system(void);
 void shutdown(void);
-uint16_t spd_to_step(uint8_t spd);
+uint16_t lambda_to_step(uint16_t lbd);
 void initialize_motor(void);
+void LcdUpdate(uint16_t lbuf);
 
-#define _XTAL_FREQ 8000000 //PICのクロックをHzで設定(8MHz)
+#define _XTAL_FREQ 32000000 //PICのクロックをHzで設定(32MHz)
 #define RO_TURN_R (1)
 #define RO_TURN_L (-1)
 #define RO_STOP   (0)
@@ -48,7 +50,15 @@ void initialize_motor(void);
 #define OD3 0x02
 #define PL1 0x03
 #define PL2 0x04
-#define TMR1_pre 17994
+#define LZERO 65535
+#define LONE 47619 //1km/h時の周期が約47.619ms
+#define L10 4762
+#define L20 2381
+#define L30 1587
+#define L40 1190
+#define L50 952
+#define DISP_MAX 0xFF
+
 // motor macro
 #define MTHLLH()    {LATA=0;LATA=0b01000010;} //pin1/4
 #define MTHLLL()    {LATA=0;LATA=0b01000000;} //pin1
@@ -63,22 +73,24 @@ void initialize_motor(void);
                                     // Default is 4.
 #define MAX_SPD_STEPS     (540)   // Maximum value on the spdmeter scale. 
                                     // 540 means that the shaft rotates 180 degrees.
+#define MAX_SPD_LAMBDA    (187)
+#define MAX_STEP_LAMBDA   (587)
 #define MT_BUFFER_COUNT     (ACC_MODE_LO-ACC_MODE_HI)
 #define MT_BUFFER_COUNT_END (MT_BUFFER_COUNT-1)
 
-
-unsigned int pulse; //総走行距離内部カウント変数
-unsigned char spdval; //速度値
 unsigned long odo; //総走行距離表示値変数
+unsigned int pulse; //総走行距離内部カウント変数
+unsigned char upd = 0;
 uint16_t g_motor_pos_step = 0;
 uint16_t g_motor_target_step = 0;
+uint16_t g_lambda = LZERO;
 
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
 
 /* ------------------------------------------------------------------
  * <<setting>>
- * uint16_t spd_to_step(uint8_t spd)
+ * uint16_t lambda_to_step(uint8_t lbd)
  * Make adjustments here to suit the specifications of the various
  * spdmeters.
  * <<note>>
@@ -90,7 +102,7 @@ uint16_t g_motor_target_step = 0;
  * However, please do not use division, as it takes a lot of time to
  * calculate and it will affect the response.
 -------------------------------------------------------------------*/
-uint16_t spd_to_step(uint8_t spd) {
+uint16_t lambda_to_step(uint16_t lbd) {
     uint16_t target_step;
     //10km/h = 15° = 45step
     //20km/h = 38°= 114step
@@ -98,29 +110,33 @@ uint16_t spd_to_step(uint8_t spd) {
     //40km/h = 86 = 258step
     //50km/h = 109°= 327step
     //60km/h = 133°= 399step
-    if(spd==0)
-    {
-        target_step = 0;
-    } else if(spd<11) // 0-10km/h
-    {          
-        //4.5x
-        target_step = (uint16_t)(((spd << 3) + spd)>>1);
-    } else if(spd<21) //11-20km/h
-    {
-        //7.5x-36
-        target_step = (uint16_t)((((spd << 4) - spd) >> 1) - 36);
-    }  else if(spd<51)  // 20-50km/h
-    {                     
-        //6.9x-18
-        //≒7x-16-(x/8)
-        //7x-(x+128)/8
-        target_step = (uint16_t)(((spd << 3) - spd) - ((spd + 128) >> 3));
-    } else  //50km/h over
-    {
-        //7.2x-33
-        target_step = (uint16_t)(((spd << 3) - spd) + (spd >> 2) - 33);
+    uint16_t stpfunc = 0;
+    if(lbd < MAX_STEP_LAMBDA){
+        return MAX_SPD_STEPS;
     }
-    
+    else if(lbd < L50) //51km/h over
+    {
+        stpfunc = STPFUNC_SPEED_OVER_50KMH;
+    } else if(lbd < L40)  // 31-40km/h
+    {          
+        stpfunc = STPFUNC_SPEED_41_50KMH;
+    } else if(lbd < L30)  // 31-40km/h
+    {
+        stpfunc = STPFUNC_SPEED_31_40KMH;
+    } else if(lbd < L20)  // 21-30km/h
+    {          
+        stpfunc = STPFUNC_SPEED_21_30KMH;
+    } else if(lbd < L10) //11-20km/h
+    {
+        stpfunc = STPFUNC_SPEED_11_20KMH;
+    }  else if(lbd < LZERO) // 1-10km/h
+    {                   
+        stpfunc = STPFUNC_SPEED_1_10KMH;
+    } else 
+    {        
+        return 0;
+    }
+    target_step = (uint16_t)((uint32_t)stpfunc * LONE / lbd / 100);
     if(target_step > MAX_SPD_STEPS)    
     {
         target_step = MAX_SPD_STEPS;
@@ -130,93 +146,130 @@ uint16_t spd_to_step(uint8_t spd) {
 
 /*******************************************************************************
 *  メインの処理
-*　メイン関数は基本LCDの表示でお茶を濁す
+*　メイン関数は基本LCDの表示と数値変換でお茶を濁す
 *******************************************************************************/
 void main() 
 {         
     initialize_system();
     initialize_motor();
     LCD_Clear();    
-    T1CONbits.TMR1ON = 1;
     TMR1IE = 1;
-    bat_sig = 1;
+    bat_sig = 1;    
     while(1) 
-    {      
-        char s[8];
-        char i, j, temp;
-        unsigned long odotmp;
-    
-        //ODO=12345km,SPD=9km/h
-        //↓
-        //9  54321
-        i = 0x00;
-        temp = spdval;
-        s[i] = temp % 10 + '0';
-        temp /= 10;    
-        for(i = 1; i < 3; i++){
-            if(temp == 0){
-                s[i] = ' ';
-            }else{
-                s[i] = temp % 10 + '0';
-                temp /= 10;
-            }    
-        }
-            odotmp = odo;
-        for(i = 3; i < 8; i++){
-            if(odotmp == 0){
-                s[i] = '0';
-            }else{
-                s[i] = odotmp % 10 + '0';
-                odotmp /= 10;
-            }
-        }
-    
-        //9  54321
-        //↓
-        //12345  9
-        for (i = 0, j = 7; i < j; i++, j--){
-            temp = s[i];
-            s[i] = s[j];
-            s[j] = temp;
-        }
-    
-        //ODO  SPD
-        //12345  9
-        LCD_SetCursor(0,0);
-        LCD_Puts("ODO  SPD"); 
-        LCD_SetCursor (0,1);
-        LCD_Puts(s);    
-        g_motor_target_step = spd_to_step(spdval);
-        if(key_sig == 1)
+    {
+        uint16_t lbuf = g_lambda;
+        g_motor_target_step = lambda_to_step(lbuf);     
+        if(upd == 0)
         {
-            shutdown();
+            //毎回更新していると暴れて判読不能なのでTMR4で減算のupdカウントが0になったらLCD表示を更新
+            LcdUpdate(lbuf);
+            upd = UPD_INT; 
+        }
+        if(key_sig)
+        {            
             break;
         }
     }     
+    shutdown();
+}     
+
+
+/** -----------------------------------------------------------------
+ * void LcdUpdate(void)
+ * LCD表示更新
+------------------------------------------------------------------ */
+void LcdUpdate(uint16_t lbuf)
+{   
+    char s[8];
+    char i, j, temp;
+    unsigned long odotmp;
+    if(lbuf < MAX_SPD_LAMBDA){
+        temp = DISP_MAX;
+    }else if(lbuf <= LONE){
+        temp = (unsigned char)((LONE + (lbuf / 2)) / lbuf);
+    }else{
+        temp = 0;
+    }   
+    //ODO=12345km,SPD=9km/h
+    //↓
+    //9  54321
+    i = 0x00;
+    s[i] = temp % 10 + '0';
+    temp /= 10;    
+    for(i = 1; i < 3; i++){
+        if(temp == 0){
+            s[i] = ' ';
+        }else{
+            s[i] = temp % 10 + '0';
+            temp /= 10;
+        }    
+    } 
+
+    odotmp = odo;
+    for(i = 3; i < 8; i++){
+        if(odotmp == 0){
+            s[i] = '0';
+        }else{
+            s[i] = odotmp % 10 + '0';
+            odotmp /= 10;
+        }
+    }
+
+    //9  54321
+    //↓
+    //12345  9
+    for (i = 0, j = 7; i < j; i++, j--){
+        temp = s[i];
+        s[i] = s[j];
+        s[j] = temp;
+    }
+    
+    //ODO  SPD
+    //12345  9
+    LCD_SetCursor(0,0);
+    LCD_Puts("ODO  SPD");
+    LCD_SetCursor(0,1);
+    LCD_Puts(s);
 }
+
 
 /* ------------------------------------------------------------------
  * PIC Interrupt
 -------------------------------------------------------------------*/
 void __interrupt() isr(void)
-{   static unsigned char spdpl; //パルスカウント用, 0.05秒間の平均速度変数
-    static unsigned char plbuf[4];
-    static unsigned char pos;
-    unsigned int plint;
-    
+{     
+    static _Bool active;
+    static uint32_t buf;
      InterI2C() ;    
      
     if(C1IF)    //車輪速センサパルス検知
     { 
-        C1IF    = 0 ;   
-        if(TMR1IE) //オープニング中は速度表示用変数にはノータッチ
+        if(TMR1IE) //オープニング中はラムダ値にはノータッチ
         {
-            spdpl++;
+            if(active)
+            {
+                //矩形波が出ていないっぽいので+-の平均をとる
+                if(!C1OUT)
+                {
+                    buf = TMR1;
+                }
+                if(C1OUT && buf > 0)
+                {
+                    buf += TMR1 + 1; 
+                    //+1→/2で実質四捨五入
+                    g_lambda = (uint16_t)(buf >> 1);                
+                    buf = 0;
+                }
+            }
+            TMR1 = 0;
+            active = 1;
+            TMR1IF = 0;
         }
-        if(C1OUT) //+信号だったら
+
+        if(C1OUT) //+信号だったら走行距離カウント
         { 
             pulse++; //総走行距離内部カウント値+1
-            if(pulse >= 37800) //60km/hで1400rpmのシャフトに27丁の歯車。あとはお察し
+            if(pulse >= PULSE_RATE) //60km/hで1400rpmのシャフトに27丁の歯車。あとはお察し
             {
                 odo++; //走行距離+1km
                 if(odo > 99999)
@@ -226,43 +279,33 @@ void __interrupt() isr(void)
                 pulse = 0; //内部カウントリセット
             }
         }
-
+        C1IF = 0 ;
     }
 
-    if(TMR1IF)
-    { //21Hz
+    if(TMR1IF) //タイムアウト(0km/h)
+    { 
+        active = 0;
+        buf = 0;
+        g_lambda = LZERO;
+        TMR1 = 0;
         TMR1IF = 0;
-        TMR1 = TMR1_pre;
-        plbuf[pos] = spdpl; 
-        if(pos >= 3)
-        {            
-            //ビットシフト四捨五入
-            plint = (plbuf[0] + plbuf[1] + plbuf[2] + plbuf[3]) >> 1;
-            if((plint & 0x01) == 0x01)
-            {
-                plint >>= 1;
-                plint++;
-            }
-            else
-            {
-                plint >>= 1;
-            }            
-            spdval = (unsigned char)plint; //パルス数=約0.05秒間の平均速度になるよう設計してあるんやな
-            pos = 0;
-        }
-        else
-        {
-            pos++;
-        }
-        spdpl = 0;       
     }
 
      // MOTOR ROTATION TIMING
     if (TMR2IF) 
     {
-        TMR2IF = 0;
         rotate();
+        TMR2IF = 0;
     } // end of TMR2IF 
+     
+     if(TMR4IF) //LCDリフレッシュ遅延
+     {
+         if(upd>0)
+         {
+             upd--;
+         }
+         TMR4IF = 0;
+     }
 }
 
 /* ------------------------------------------------------------------
@@ -283,20 +326,20 @@ void rotate(void)
      * Set a timer2 here to control the motor at the most accurate time possible.
      */
     switch (l_acceleration_mode) {
-        case  0: {T2CON = 0b00100100;PR2=222;} break; // 556us
-        case  1: {T2CON = 0b00100100;PR2=228;} break; // 570us
-        case  2: {T2CON = 0b00100100;PR2=240;} break; // 600us
-        case  3: {T2CON = 0b00100100;PR2=252;} break; // 630us
-        case  4: {T2CON = 0b00101100;PR2=225;} break; // 676us
-        case  5: {T2CON = 0b00101100;PR2=247;} break; // 740us
-        case  6: {T2CON = 0b00110100;PR2=239;} break; // 838us
-        case  7: {T2CON = 0b01000100;PR2=231;} break; // 1040us
-        case  8: {T2CON = 0b01010100;PR2=235;} break; // 1292us
-        case  9: {T2CON = 0b01100100;PR2=251;} break; // 1630us
-        case 10: {T2CON = 0b01111100;PR2=251;} break; // 2008us
-        case 11: {T2CON = 0b00100101;PR2=250;} break; // 2500us
-        case 12: {T2CON = 0b00110101;PR2=226;} break; // 3168us
-        default: {T2CON = 0b00111101;PR2=250;} break; // 4000us
+        case  0: {T2CON = 0b00100101;PR2=222;} break; // 556us
+        case  1: {T2CON = 0b00100101;PR2=228;} break; // 570us
+        case  2: {T2CON = 0b00100101;PR2=240;} break; // 600us
+        case  3: {T2CON = 0b00100101;PR2=252;} break; // 630us
+        case  4: {T2CON = 0b00101101;PR2=225;} break; // 676us
+        case  5: {T2CON = 0b00101101;PR2=247;} break; // 740us
+        case  6: {T2CON = 0b00110101;PR2=239;} break; // 838us
+        case  7: {T2CON = 0b01000101;PR2=231;} break; // 1040us
+        case  8: {T2CON = 0b01010101;PR2=235;} break; // 1292us
+        case  9: {T2CON = 0b01100101;PR2=251;} break; // 1630us
+        case 10: {T2CON = 0b01111101;PR2=251;} break; // 2008us
+        case 11: {T2CON = 0b00100110;PR2=250;} break; // 2500us
+        case 12: {T2CON = 0b00110110;PR2=226;} break; // 3168us
+        default: {T2CON = 0b00111110;PR2=250;} break; // 4000us
     }
     
     if (g_motor_pos_step > g_motor_target_step) {
@@ -386,6 +429,7 @@ void initialize_motor(void)
     TMR2IF = 0 ;
     TMR2IE = 1 ;
     uint8_t ii;
+    uint16_t tmp;
     // Start ISR with timer
     rotate();
 
@@ -412,12 +456,14 @@ void initialize_motor(void)
     /*
      * Just a demonstration, feel free to do as you like with it.
      */
-    for(ii=0;;ii+=10) 
+    for(ii=1;;ii+=10) 
     {
-        g_motor_target_step = spd_to_step(ii);
+        tmp = (uint16_t)(LONE / ii);
+        if(ii == 1) ii = 0;
+        g_motor_target_step = lambda_to_step(tmp);
         if(g_motor_target_step<MAX_SPD_STEPS) {
             while (g_motor_pos_step != g_motor_target_step);
-            __delay_ms(200);
+            __delay_ms(150);
             continue;
         }
         break;
@@ -432,7 +478,7 @@ void initialize_motor(void)
  * Initialize PIC microchip system
 ------------------------------------------------------------------ */
 void initialize_system(void) {
-    OSCCON     = 0b01110000 ; // 内部クロックは８ＭＨｚとする
+    OSCCON     = 0b11110000;   // 内部クロックは32ＭＨｚとする
     OPTION_REG = 0b00000000 ;
     ANSELA     = 0b00000100 ; // C12IN-のみアナログとする
     ANSELB     = 0b00000000 ; // AN5-AN11は使用しない全てデジタルI/Oとする
@@ -458,25 +504,28 @@ void initialize_system(void) {
     if(pulse>37800){
         pulse = 0;    
     }   
-
+    
+    // Ｉ２Ｃの初期化処理(通信速度400KHz※書類上)
+    InitI2C_Master(1) ;
+    // ＬＣＤモジュールの初期化処理
+    // ICON OFF,コントラスト(0-63),VDD=5Vで使う,LCDは8文字列 (表示メッセージはapp_config.hで設定)
+    LCD_Init(LCD_NOT_ICON,63,LCD_VDD5V,8) ;
+    LCD_SetCursor(0,0) ;        // 表示位置を設定する
+    LCD_Puts(LCD_OPENING_LINE1) ;
+    LCD_SetCursor(0,1) ;        // 表示位置を設定する
+    LCD_Puts(LCD_OPENING_LINE2) ;  
+    
     CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
     CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
     C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
     C1IE    = 1 ;            // コンパレータ1割込みを許可する
-    T1CON = 0b00010000;
+    T1CON = 0b00110001;
     TMR1IF = 0 ;   
     TMR1IE = 0 ;
-    TMR1 = TMR1_pre;
-
-    // Ｉ２Ｃの初期化処理(通信速度400KHz※書類上)
-    InitI2C_Master(1) ;
-    // ＬＣＤモジュールの初期化処理
-    // ICON OFF,コントラスト(0-63),VDD=5Vで使う,LCDは8文字列
-    LCD_Init(LCD_NOT_ICON,63,LCD_VDD5V,8) ;
-    LCD_SetCursor(0,0) ;        // 表示位置を設定する
-    LCD_Puts("STREAM") ;
-    LCD_SetCursor(1,1) ;        // 表示位置を設定する
-    LCD_Puts("EVOLVED") ;    
+    TMR1 = 0;  
+    T4CON = 0b01111111; //32.7ms
+    PR4 = 255;
+    TMR4IE = 1 ;
 }
 
 /** -----------------------------------------------------------------
@@ -484,15 +533,14 @@ void initialize_system(void) {
  * memory distances and reset motor pos
 ------------------------------------------------------------------ */
 void shutdown()
-{    
-     C1IE = 0;
-     TMR1IE= 0;
-     LCD_Clear();
-     LCD_SetCursor(0,0) ;        // 表示位置を設定する
-     LCD_Puts("MOVABLE") ;
-     LCD_SetCursor(3,1) ;        // 表示位置を設定する
-     LCD_Puts("STUFF") ;
+{   
     g_motor_target_step = 0;    //針を0km/hへ
+    C1IE = 0;
+    LCD_Clear();
+    LCD_SetCursor(0,0) ;        // 表示位置を設定する
+    LCD_Puts(LCD_SHUTDOWN_LINE1) ;
+    LCD_SetCursor(0,1) ;        // 表示位置を設定する
+    LCD_Puts(LCD_SHUTDOWN_LINE2) ;
     unsigned char od1, od2, od3, pl1, pl2; //EEPROM記録用の贄
     unsigned int sw; //贄の贄
     od1 = odo & 0xFF; //マスクして8bit化
