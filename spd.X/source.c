@@ -186,7 +186,7 @@ void LcdUpdate(uint16_t lbuf)
     if(lbuf < MAX_SPD_LAMBDA){
         temp = DISP_MAX;
     }else if(lbuf <= LONE){
-        temp = (unsigned char)(LONE / lbuf);
+        temp = (unsigned char)((LONE + (lbuf / 2)) / lbuf);
     }else{
         temp = 0;
     }   
@@ -255,12 +255,8 @@ void __interrupt() isr(void)
                 }
                 if(C1OUT && buf > 0)
                 {
-                    buf += TMR1; 
-                    //奇数なら+1→/2で実質四捨五入
-                    if((buf & 0x0001) == 0x0001)
-                    {
-                    buf++;    
-                    }
+                    buf += TMR1 + 1; 
+                    //+1→/2で実質四捨五入
                     g_lambda = (uint16_t)(buf >> 1);                
                     buf = 0;
                 }
@@ -304,7 +300,10 @@ void __interrupt() isr(void)
      
      if(TMR4IF) //LCDリフレッシュ遅延
      {
-         if(upd>0)upd--;
+         if(upd>0)
+         {
+             upd--;
+         }
          TMR4IF = 0;
      }
 }
