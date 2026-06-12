@@ -78,12 +78,12 @@ void LcdUpdate(uint16_t lbuf);
 #define MT_BUFFER_COUNT     (ACC_MODE_LO-ACC_MODE_HI)
 #define MT_BUFFER_COUNT_END (MT_BUFFER_COUNT-1)
 
-unsigned long odo; //総走行距離表示値変数
-unsigned int pulse; //総走行距離内部カウント変数
-unsigned char upd = 0;
-uint16_t g_motor_pos_step = 0;
-uint16_t g_motor_target_step = 0;
-uint16_t g_lambda = LZERO;
+volatile unsigned long odo; //総走行距離表示値変数
+volatile unsigned int pulse; //総走行距離内部カウント変数
+volatile unsigned char upd = 0;
+volatile uint16_t g_motor_pos_step = 0;
+volatile uint16_t g_motor_target_step = 0;
+volatile uint16_t g_lambda = LZERO;
 
 // #pragma config statements should precede project file includes.
 // Use project enums instead of #define for ON and OFF.
@@ -157,7 +157,9 @@ void main()
     bat_sig = 1;    
     while(1) 
     {
+        GIE = 0;
         uint16_t lbuf = g_lambda;
+        GIE = 1;
         g_motor_target_step = lambda_to_step(lbuf);     
         if(upd == 0)
         {
@@ -515,7 +517,7 @@ void initialize_system(void) {
     LCD_SetCursor(0,1) ;        // 表示位置を設定する
     LCD_Puts(LCD_OPENING_LINE2) ;  
     
-    CM1CON0 = 0b11010100 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス無効
+    CM1CON0 = 0b11010110 ;   // -＞＋でON、高速モード、出力は反転、ヒステリシス有効
     CM1CON1 = 0b11010010 ;   // 立上り、立下りで割込み利用、＋はDAC入力、-はRA3から入力
     C1IF    = 0 ;            // コンパレータ1割込フラグを0にする
     C1IE    = 1 ;            // コンパレータ1割込みを許可する
