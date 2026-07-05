@@ -134,14 +134,25 @@ uint16_t lambda_to_step(uint16_t lbd) {
         stpfunc = STPFUNC_SPEED_1_10KMH;
     } else 
     {        
+        target_step = 0;
+    }
+
+    if (stpfunc > 0) {
+        target_step = (uint16_t)((uint32_t)stpfunc * LONE / lbd / 100);
+        if(target_step > MAX_SPD_STEPS) {
+            target_step = MAX_SPD_STEPS;
+        }
+    }
+
+    // フィルター
+    static uint32_t filtered_step_x256 = 0;
+    // 停車時 (target_step == 0) は応答性を良くするため、フィルタをバイパスして速やかに0に戻す
+    if (target_step == 0) {
+        filtered_step_x256 = 0;
         return 0;
     }
-    target_step = (uint16_t)((uint32_t)stpfunc * LONE / lbd / 100);
-    if(target_step > MAX_SPD_STEPS)    
-    {
-        target_step = MAX_SPD_STEPS;
-    }
-    return target_step;
+    filtered_step_x256 = (filtered_step_x256 * STEP_FILTER_K + ((uint32_t)target_step << 8) * (256 - STEP_FILTER_K)) >> 8;
+    return (uint16_t)(filtered_step_x256 >> 8);
 }
 
 /*******************************************************************************

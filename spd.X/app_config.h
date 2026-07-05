@@ -29,10 +29,13 @@
 #define STPFUNC_SPEED_1_10KMH       400
 
 //画面更新インターバル (32.7ms * UPD_INT)ms間隔でLCD表示更新
-#define UPD_INT 16
+#define UPD_INT 10
 
 //パルス換算定数 60km/hで1400rpm(JIS規格)のシャフトに27丁の歯車
 //タイヤ径が純正と異なる場合、歯数を変更する場合は要変更
 #define PULSE_RATE 37800
+
+// フィルター係数 (0〜255, 大きいほど応答が緩やか)
+#define STEP_FILTER_K 220
 
 #endif // _APP_CONFIG_H_
