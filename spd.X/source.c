@@ -196,13 +196,27 @@ void LcdUpdate(uint16_t lbuf)
     char s[8];
     char i, j, temp;
     unsigned long odotmp;
+    
+    static uint16_t filtered_speed_x256 = 0;
+    
     if(lbuf < MAX_SPD_LAMBDA){
         temp = DISP_MAX;
     }else if(lbuf <= LONE){
         temp = (unsigned char)((LONE + (lbuf / 2)) / lbuf);
     }else{
         temp = 0;
-    }   
+    }
+     
+    if (temp == 0) {
+        // 停車時は応答性を良くするため、速やかに0にする
+        filtered_speed_x256 = 0;
+    } else {
+        // 一次遅れフィルタ計算
+        filtered_speed_x256 = (filtered_speed_x256 * LCD_FILTER_K + ((uint16_t)temp << 8) * (256 - LCD_FILTER_K)) >> 8;
+        // フィルタ後の速度をtempに格納
+        temp = (char)(filtered_speed_x256 >> 8);
+    }
+     
     //ODO=12345km,SPD=9km/h
     //↓
     //9  54321
@@ -253,7 +267,7 @@ void __interrupt() isr(void)
 {     
     static _Bool active;
     static uint32_t buf;
-     InterI2C() ;    
+    InterI2C() ;    
      
     if(C1IF)    //車輪速センサパルス検知
     { 
