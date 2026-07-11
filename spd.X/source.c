@@ -143,7 +143,12 @@ uint16_t lambda_to_step(uint16_t lbd) {
             target_step = MAX_SPD_STEPS;
         }
     }
-
+    
+    //オープニング中はフィルタ処理スキップ
+    if (bat_sig == 0){
+        return target_step;
+    }
+    
     // フィルター
     static uint32_t filtered_step_x256 = 0;
     // 停車時 (target_step == 0) は応答性を良くするため、フィルタをバイパスして速やかに0に戻す
