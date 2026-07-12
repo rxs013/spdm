@@ -199,7 +199,7 @@ void main()
 void LcdUpdate(uint16_t lbuf)
 {   
     char s[8];
-    char i, j, temp;
+    uint8_t i, j, temp;
     unsigned long odotmp;
     
     static uint32_t filtered_speed_x256 = 0;
@@ -217,9 +217,10 @@ void LcdUpdate(uint16_t lbuf)
         filtered_speed_x256 = 0;
     } else {
         // 一次遅れフィルタ計算
-        filtered_speed_x256 = (filtered_speed_x256 * LCD_FILTER_K + ((uint16_t)temp << 8) * (256 - LCD_FILTER_K)) >> 8;
+        filtered_speed_x256 = (filtered_speed_x256 * (uint32_t)LCD_FILTER_K
+            + ((uint32_t)temp << 8) * (uint32_t)(256 - LCD_FILTER_K)) >> 8;
         // フィルタ後の速度をtempに格納
-        temp = (char)(filtered_speed_x256 >> 8);
+        temp = (uint8_t)(filtered_speed_x256 >> 8);
     }
      
     //ODO=12345km,SPD=9km/h
