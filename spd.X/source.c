@@ -202,7 +202,7 @@ void LcdUpdate(uint16_t lbuf)
     char i, j, temp;
     unsigned long odotmp;
     
-    static uint16_t filtered_speed_x256 = 0;
+    static uint32_t filtered_speed_x256 = 0;
     
     if(lbuf < MAX_SPD_LAMBDA){
         temp = DISP_MAX;
