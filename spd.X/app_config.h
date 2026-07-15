@@ -37,6 +37,6 @@
 
 // フィルター係数 (0〜255, 大きいほど応答が緩やか)
 #define STEP_FILTER_K 220
-#define LCD_FILTER_K 220
+#define LCD_FILTER_K 50
 
 #endif // _APP_CONFIG_H_
